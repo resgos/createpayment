@@ -1,19 +1,19 @@
-package ru.sbrf.pprb.createpayment.config;
+package ru.sbrf.pprb.stmnt.modulex.config;
 
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import ru.sbrf.pprb.createpayment.lib.CreatePaymentLibrary;
-import ru.sbrf.pprb.createpayment.validator.SimpleValidator;
+import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
+import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 @Configuration
 @EnableAutoConfiguration
-@ComponentScan({"ru.sbrf.pprb.createpayment"})
+@ComponentScan({"ru.sbrf.pprb.stmnt"})
 @EnableConfigurationProperties({CreatePaymentProperties.class, IgniteThinClientProperties.class})
 public class AppConfig {
 

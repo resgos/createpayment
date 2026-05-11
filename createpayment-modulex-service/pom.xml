@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>ru.sbrf.pprb.stmnt.services</groupId>
+        <artifactId>module-x-pprb</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>createpayment-modulex-service</artifactId>
+
+    <properties>
+        <start-class>ru.sbrf.pprb.stmnt.services.simpleservicemodulex.ApplicationLauncher</start-class>
+    </properties>
+
+
+    <dependencies>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ru.sbrf.pprb.stmnt.services</groupId>
+            <artifactId>simpleservicemodulex</artifactId>
+            <version>${simpleservice.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
+
+
+        <!--java.lang.ClassNotFoundException: javax.jws.WebParam-->
+        <dependency>
+            <groupId>javax</groupId>
+            <artifactId>javaee-endorsed-api</artifactId>
+            <version>7.0</version>
+        </dependency>
+
+        <!-- Зависимости Spring Boot -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!--Sprig actuator (jmx метрики из коробки)-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-jmx</artifactId>
+        </dependency>
+        <!-- Интеграция метрик с prometheus -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sbt.ignite</groupId>
+            <artifactId>ignite-spring-boot-thin-client-autoconfigure-ext</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
+
+        <!--Для интеграции с ТС Журналированием. Json формат логов-->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>6.3</version>
+        </dependency>
+
+        <!--Для тестов-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.junit.vintage</groupId>
+                    <artifactId>junit-vintage-engine</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <executable>true</executable>
+                    <mainClass>ru.sbrf.pprb.stmnt.services.simpleservicemodulex.ApplicationLauncher</mainClass>
+                    <jvmArguments>-Dfile.encoding=UTF8</jvmArguments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>dev-local</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <dependencies>
+                <!--                <dependency>-->
+                <!--                    <groupId>ru.sbrf.pprb.stmnt.services.balancesforaccountlist.lib</groupId>-->
+                <!--                    <artifactId>balancesforaccountlist-library</artifactId>-->
+                <!--                    <version>1.0-SNAPSHOT</version>-->
+                <!--                </dependency>-->
+
+                <!--                <dependency>-->
+                <!--                    <groupId>ru.sbrf.pprb.stmnt.api</groupId>-->
+                <!--                    <artifactId>balancesforaccountlist</artifactId>-->
+                <!--                    <version>1.0-SNAPSHOT</version>-->
+                <!--                </dependency>-->
+            </dependencies>
+        </profile>
+    </profiles>
+
+</project>

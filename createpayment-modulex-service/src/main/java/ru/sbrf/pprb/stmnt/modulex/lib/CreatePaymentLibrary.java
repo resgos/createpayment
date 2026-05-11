@@ -1,12 +1,12 @@
-package ru.sbrf.pprb.createpayment.lib;
+package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
-import ru.sbrf.pprb.createpayment.api.dto.CreatePayment;
-import ru.sbrf.pprb.createpayment.api.dto.CreatePaymentResponse;
-import ru.sbrf.pprb.createpayment.api.dto.CreatePaymentResponse.PaymentStatus;
-import ru.sbrf.pprb.createpayment.config.AppConfig;
-import ru.sbrf.pprb.createpayment.config.CreatePaymentProperties;
-import ru.sbrf.pprb.createpayment.validator.SimpleValidator;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePayment;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse.PaymentStatus;
+import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
+import ru.sbrf.pprb.stmnt.modulex.config.CreatePaymentProperties;
+import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

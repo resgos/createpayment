@@ -1,11 +1,11 @@
-package ru.sbrf.pprb.createpayment.lib;
+package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import ru.sbrf.pprb.createpayment.api.dto.CreatePayment;
-import ru.sbrf.pprb.createpayment.api.dto.CreatePaymentResponse;
-import ru.sbrf.pprb.createpayment.config.IgniteThinClientProperties;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePayment;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse;
+import ru.sbrf.pprb.stmnt.modulex.config.IgniteThinClientProperties;
 
 @Slf4j
 @Component

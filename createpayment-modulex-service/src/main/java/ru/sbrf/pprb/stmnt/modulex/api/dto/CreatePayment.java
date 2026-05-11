@@ -1,4 +1,4 @@
-package ru.sbrf.pprb.createpayment.api.dto;
+package ru.sbrf.pprb.stmnt.modulex.api.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

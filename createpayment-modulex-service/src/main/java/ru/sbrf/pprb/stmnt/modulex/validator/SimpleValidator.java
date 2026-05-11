@@ -1,4 +1,4 @@
-package ru.sbrf.pprb.createpayment.validator;
+package ru.sbrf.pprb.stmnt.modulex.validator;
 
 import org.springframework.stereotype.Component;
 

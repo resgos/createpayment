@@ -1,4 +1,4 @@
-package ru.sbrf.pprb.createpayment.config;
+package ru.sbrf.pprb.stmnt.modulex.config;
 
 import lombok.Getter;
 import lombok.Setter;

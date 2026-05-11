@@ -3,7 +3,16 @@ server:
 
 spring:
   application:
-    name: createpayment
+    name: createpayment-modulex-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
 
 createpayment:
   max-amount: 100000000
@@ -21,4 +30,4 @@ ignite:
 
 logging:
   level:
-    ru.sbrf.pprb.createpayment: DEBUG
+    ru.sbrf.pprb.stmnt.modulex: DEBUG

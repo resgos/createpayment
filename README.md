@@ -1,27 +1,34 @@
-# createpayment
+# module-x-pprb
 
-Spring Boot JSON-RPC сервис для создания платежей. Каркас по образцу `stmnt`-сервисов: `AppConfig` + `*Properties` + RPC-имплементация + библиотечный класс с бизнес-логикой и опциональной Ignite-веткой.
+Multi-module Maven проект. Содержит модуль `createpayment-modulex-service` —
+Spring Boot JSON-RPC сервис создания платежей. Каркас по образцу
+`stmnt`-сервисов: `AppConfig` + `*Properties` + RPC-имплементация +
+библиотечный класс с бизнес-логикой и опциональной Ignite-веткой.
+
+Точка входа — `ru.sbrf.pprb.stmnt.services.simpleservicemodulex.ApplicationLauncher`
+из зависимости `simpleservicemodulex`.
 
 ## Структура
 
-- `config/AppConfig.java` — Spring-конфигурация, бины, общие константы
-- `config/CreatePaymentProperties.java` — настройки домена (лимиты, валюта)
-- `config/IgniteThinClientProperties.java` — настройки Ignite Thin Client
-- `api/CreatePaymentService.java` — JSON-RPC интерфейс
-- `api/dto/CreatePayment.java`, `CreatePaymentResponse.java` — DTO
-- `rpc/CreatePaymentServiceImpl.java` — RPC-имплементация с переключением Ignite/default
-- `lib/CreatePaymentLibrary.java` — основная бизнес-логика
-- `lib/CreatePaymentLibraryIgnite.java` — вариант поверх Ignite
-- `validator/SimpleValidator.java` — простой валидатор полей
+```
+module-x-pprb/                              (parent pom)
+└── createpayment-modulex-service/          (Spring Boot модуль)
+    └── src/main/java/ru/sbrf/pprb/stmnt/modulex/
+        ├── config/   — AppConfig, *Properties
+        ├── api/      — JSON-RPC интерфейс и DTO
+        ├── rpc/      — @AutoJsonRpcServiceImpl, выбор Ignite/default
+        ├── lib/      — CreatePaymentLibrary(+Ignite)
+        └── validator/— SimpleValidator
+```
 
 ## Сборка
 
 ```
-mvn clean package
+mvn clean install
 ```
 
 ## Запуск
 
 ```
-mvn spring-boot:run
+mvn -pl createpayment-modulex-service spring-boot:run
 ```

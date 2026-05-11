@@ -1,16 +1,16 @@
-package ru.sbrf.pprb.createpayment.rpc;
+package ru.sbrf.pprb.stmnt.modulex.rpc;
 
 import com.googlecode.jsonrpc4j.spring.AutoJsonRpcServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
-import ru.sbrf.pprb.createpayment.api.CreatePaymentService;
-import ru.sbrf.pprb.createpayment.api.dto.CreatePayment;
-import ru.sbrf.pprb.createpayment.api.dto.CreatePaymentResponse;
-import ru.sbrf.pprb.createpayment.config.IgniteThinClientProperties;
-import ru.sbrf.pprb.createpayment.lib.CreatePaymentLibrary;
-import ru.sbrf.pprb.createpayment.lib.CreatePaymentLibraryIgnite;
+import ru.sbrf.pprb.stmnt.modulex.api.CreatePaymentService;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePayment;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse;
+import ru.sbrf.pprb.stmnt.modulex.config.IgniteThinClientProperties;
+import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
+import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibraryIgnite;
 
 @Slf4j
 @Service
