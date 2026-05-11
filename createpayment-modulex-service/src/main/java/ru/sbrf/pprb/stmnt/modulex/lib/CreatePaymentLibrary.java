@@ -55,17 +55,19 @@ public class CreatePaymentLibrary {
     }
 
     private WalletTurnResult buildDraft(WalletTurnInput wt, String rqUID, LocalDateTime rqTm) {
-        simpleValidator.requireNonBlank(wt.getCcRegisterDt(), "ccRegisterDt");
-        simpleValidator.requireNonBlank(wt.getCcRegisterKt(), "ccRegisterKt");
-        simpleValidator.requireNonNull(wt.getCcDate(), "ccDate");
-        simpleValidator.requireNonNull(wt.getCcSum(), "ccSum");
-
-        String txId = idGenerator.transactionId();
         WalletTurnResult.WalletTurnResultBuilder rb = WalletTurnResult.builder()
-                .ccBchOperationId(wt.getCcBchOperationId())
-                .ccTransactionId(txId);
+                .ccBchOperationId(wt != null ? wt.getCcBchOperationId() : null);
 
         try {
+            simpleValidator.requireNonNull(wt, "walletTurn");
+            simpleValidator.requireNonBlank(wt.getCcRegisterDt(), "ccRegisterDt");
+            simpleValidator.requireNonBlank(wt.getCcRegisterKt(), "ccRegisterKt");
+            simpleValidator.requireNonNull(wt.getCcDate(), "ccDate");
+            simpleValidator.requireNonNull(wt.getCcSum(), "ccSum");
+
+            String txId = idGenerator.transactionId();
+            rb.ccTransactionId(txId);
+
             TurnDocdataDraftBuilder b = TurnDocdataDraft.builder()
                     // identifiers
                     .ccRegisterId(wt.getCcRegisterDt())
@@ -116,7 +118,7 @@ public class CreatePaymentLibrary {
             return rb.status(Status.DRAFT_CREATED).statusDesc("OK").turnDocdata(draft).build();
         } catch (Exception e) {
             log.warn("Build draft failed for ccBchOperationId={}: {}",
-                    wt.getCcBchOperationId(), e.getMessage());
+                    wt != null ? wt.getCcBchOperationId() : null, e.getMessage());
             return rb.status(Status.FAILED).statusDesc(e.getMessage()).build();
         }
     }

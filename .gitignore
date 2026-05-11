@@ -1,5 +1,6 @@
 target/
 *.class
+_test-runner/dependency-reduced-pom.xml
 
 # IDE
 .idea/
