@@ -2,15 +2,11 @@ package ru.sbrf.pprb.stmnt.modulex.rpc;
 
 import com.googlecode.jsonrpc4j.spring.AutoJsonRpcServiceImpl;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import ru.sbrf.pprb.stmnt.modulex.api.CreatePaymentService;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePayment;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse;
-import ru.sbrf.pprb.stmnt.modulex.config.IgniteThinClientProperties;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
-import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibraryIgnite;
 
 @Slf4j
 @Service
@@ -18,27 +14,16 @@ import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibraryIgnite;
 public class CreatePaymentServiceImpl implements CreatePaymentService {
 
     private final CreatePaymentLibrary createPaymentLibrary;
-    @Nullable
-    private final CreatePaymentLibraryIgnite createPaymentIgniteLibrary;
-    private final IgniteThinClientProperties ignProps;
 
-    public CreatePaymentServiceImpl(
-            CreatePaymentLibrary createPaymentLibrary,
-            @Autowired(required = false) @Nullable
-            CreatePaymentLibraryIgnite createPaymentIgniteLibrary,
-            IgniteThinClientProperties ignProps) {
+    public CreatePaymentServiceImpl(CreatePaymentLibrary createPaymentLibrary) {
         this.createPaymentLibrary = createPaymentLibrary;
-        this.createPaymentIgniteLibrary = createPaymentIgniteLibrary;
-        this.ignProps = ignProps;
     }
 
     @Override
     public CreatePaymentResponse execute(CreatePayment request) {
-        if (ignProps.isEnabled() && createPaymentIgniteLibrary != null) {
-            log.debug("CreatePayment: using Ignite library");
-            return createPaymentIgniteLibrary.execute(request);
-        }
-        log.debug("CreatePayment: using default library");
+        log.debug("CreatePayment: rqUID={}, walletTurns={}",
+                request != null ? request.getRqUID() : null,
+                request != null && request.getWalletTurns() != null ? request.getWalletTurns().size() : 0);
         return createPaymentLibrary.execute(request);
     }
 }

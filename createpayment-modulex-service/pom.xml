@@ -63,13 +63,6 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.sbt.ignite</groupId>
-            <artifactId>ignite-spring-boot-thin-client-autoconfigure-ext</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-
-
         <!--Для интеграции с ТС Журналированием. Json формат логов-->
         <dependency>
             <groupId>net.logstash.logback</groupId>

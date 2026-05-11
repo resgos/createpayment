@@ -22,14 +22,6 @@ sber-integration:
   read-timeout-ms: 15000
   bic-directory: false
 
-ignite:
-  thin-client:
-    enabled: false
-    addresses:
-      - 127.0.0.1:10800
-    connect-timeout-ms: 5000
-    cache-name: payments
-
 logging:
   level:
     ru.sbrf.pprb.stmnt.modulex: DEBUG

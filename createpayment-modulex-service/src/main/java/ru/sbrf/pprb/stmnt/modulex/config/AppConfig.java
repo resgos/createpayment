@@ -20,7 +20,6 @@ import java.time.format.DateTimeFormatter;
 @EnableAutoConfiguration
 @ComponentScan({"ru.sbrf.pprb.stmnt"})
 @EnableConfigurationProperties({
-        IgniteThinClientProperties.class,
         SberIntegrationProperties.class
 })
 public class AppConfig {
