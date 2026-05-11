@@ -14,12 +14,6 @@ management:
     health:
       show-details: always
 
-createpayment:
-  max-amount: 100000000
-  min-amount: 0.01
-  default-currency: "810"
-  purpose-max-length: 210
-
 sber-integration:
   url: http://stmnt-http.apps.bcivthq2.k8s.delta.sbrf.ru/sberintegration-statement-server/execute
   method: getSberIntegration

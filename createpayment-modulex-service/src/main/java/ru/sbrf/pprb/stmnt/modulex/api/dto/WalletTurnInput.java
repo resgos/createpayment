@@ -14,31 +14,17 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class WalletTurnInput {
 
-    private String ccWalletTurnId;
-    private String ccTransactionId;
-    private String ccOperationId;
+    private String ccBchOperationId;
     private String ccContractId;
 
-    private String ccWalletDt;
+    private String ccOwnerDt;
     private String ccRegisterDt;
-    private String ccWalletKt;
+    private String ccOwnerKt;
     private String ccRegisterKt;
 
     private LocalDateTime ccDate;
-
-    private String ccTypeDoc;
-    private String ccNum;
     private LocalDateTime ccDateDoc;
-    private String ccPurpose;
-    private String ccPurposeCode;
 
     private BigDecimal ccSum;
-    private BigDecimal ccSumNAT;
-    private BigDecimal ccSumPO;
-    private BigDecimal ccSumPL;
-    private BigDecimal ccPriority;
-
-    private String ccValutaTrans;
-    private String ccValutaDT;
-    private String ccValutaKT;
+    private String ccPurpose;
 }

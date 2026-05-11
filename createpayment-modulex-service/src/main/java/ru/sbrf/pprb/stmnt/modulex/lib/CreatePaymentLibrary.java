@@ -3,12 +3,12 @@ package ru.sbrf.pprb.stmnt.modulex.lib;
 import lombok.extern.slf4j.Slf4j;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePayment;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse;
-import ru.sbrf.pprb.stmnt.modulex.api.dto.PartyEnrichment;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft.TurnDocdataDraftBuilder;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnInput;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult.Status;
 import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
-import ru.sbrf.pprb.stmnt.modulex.config.CreatePaymentProperties;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult;
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
@@ -21,15 +21,15 @@ import java.util.List;
 public class CreatePaymentLibrary {
 
     private final SimpleValidator simpleValidator;
-    private final CreatePaymentProperties properties;
     private final SberIntegrationClient sberClient;
+    private final TurnDocdataIdGenerator idGenerator;
 
     public CreatePaymentLibrary(SimpleValidator simpleValidator,
-                                CreatePaymentProperties properties,
-                                SberIntegrationClient sberClient) {
+                                SberIntegrationClient sberClient,
+                                TurnDocdataIdGenerator idGenerator) {
         this.simpleValidator = simpleValidator;
-        this.properties = properties;
         this.sberClient = sberClient;
+        this.idGenerator = idGenerator;
     }
 
     public CreatePaymentResponse execute(CreatePayment request) {
@@ -37,118 +37,143 @@ public class CreatePaymentLibrary {
         simpleValidator.requireNonNull(request.getWalletTurns(), "walletTurns");
 
         String rqUID = request.getRqUID();
-        List<WalletTurnResult> results = new ArrayList<>(request.getWalletTurns().size());
+        LocalDateTime rqTm = request.getRqTm() != null ? request.getRqTm() : LocalDateTime.now(AppConfig.ZONE_ID);
 
+        List<WalletTurnResult> results = new ArrayList<>(request.getWalletTurns().size());
         for (WalletTurnInput wt : request.getWalletTurns()) {
-            results.add(enrich(wt, rqUID));
+            results.add(buildDraft(wt, rqUID, rqTm));
         }
 
         int failed = (int) results.stream().filter(r -> r.getStatus() == Status.FAILED).count();
-        int partial = (int) results.stream().filter(r -> r.getStatus() == Status.PARTIALLY_ENRICHED).count();
-
         return CreatePaymentResponse.builder()
                 .rqUID(rqUID)
                 .rqTm(LocalDateTime.now(AppConfig.ZONE_ID))
-                .statusCode(failed == results.size() ? 1 : 0)
-                .statusDesc(buildSummary(results.size(), failed, partial))
+                .statusCode(failed == results.size() && !results.isEmpty() ? 1 : 0)
+                .statusDesc("Created drafts: " + (results.size() - failed) + ", failed: " + failed)
                 .results(results)
                 .build();
     }
 
-    private WalletTurnResult enrich(WalletTurnInput wt, String rqUID) {
-        simpleValidator.requireNonBlank(wt.getCcWalletTurnId(), "ccWalletTurnId");
+    private WalletTurnResult buildDraft(WalletTurnInput wt, String rqUID, LocalDateTime rqTm) {
+        simpleValidator.requireNonBlank(wt.getCcRegisterDt(), "ccRegisterDt");
+        simpleValidator.requireNonBlank(wt.getCcRegisterKt(), "ccRegisterKt");
+        simpleValidator.requireNonNull(wt.getCcDate(), "ccDate");
+        simpleValidator.requireNonNull(wt.getCcSum(), "ccSum");
 
-        WalletTurnResult.WalletTurnResultBuilder b = WalletTurnResult.builder()
-                .ccWalletTurnId(wt.getCcWalletTurnId())
-                .ccTransactionId(wt.getCcTransactionId());
+        String txId = idGenerator.transactionId();
+        WalletTurnResult.WalletTurnResultBuilder rb = WalletTurnResult.builder()
+                .ccBchOperationId(wt.getCcBchOperationId())
+                .ccTransactionId(txId);
 
         try {
-            PartyEnrichment dt = enrichByRegister(wt.getCcRegisterDt(), rqUID);
-            PartyEnrichment kt = enrichByRegister(wt.getCcRegisterKt(), rqUID);
+            TurnDocdataDraftBuilder b = TurnDocdataDraft.builder()
+                    // identifiers
+                    .ccRegisterId(wt.getCcRegisterDt())
+                    .ccWalletId(wt.getCcOwnerDt())
+                    .ccOperationId(idGenerator.operationId())
+                    .ccBchOperationId(wt.getCcBchOperationId())
+                    .ccTransactionId(txId)
+                    .ccContractId(wt.getCcContractId())
+                    .ccRqTm(rqTm)
+                    .ccRqUId(idGenerator.rqUId())
+                    // status + direction
+                    .ccPayStatus(TurnDocdataDefaults.PAY_STATUS_DRAFT)
+                    .ccDT(TurnDocdataDefaults.DT_DEBIT)
+                    .ccTypeOper(TurnDocdataDefaults.TYPE_OPER_CURRENT_DAY)
+                    // dates
+                    .ccDate(wt.getCcDate())
+                    .ccOperationDay(wt.getCcDate().toLocalDate())
+                    .ccDateDoc(wt.getCcDateDoc())
+                    // amounts
+                    .ccSum(wt.getCcSum())
+                    .ccSumNAT(wt.getCcSum())
+                    .ccSumPO(wt.getCcSum())
+                    .ccSumPL(wt.getCcSum())
+                    // document
+                    .ccTypeDoc(TurnDocdataDefaults.TYPE_DOC_PP)
+                    .ccNum(idGenerator.docNum())
+                    .ccPurpose(wt.getCcPurpose())
+                    // registers
+                    .ccDTRegisterId(wt.getCcRegisterDt())
+                    .ccKTRegisterId(wt.getCcRegisterKt())
+                    // rates / currency (заглушки)
+                    .ccRateDT(TurnDocdataDefaults.RATE_DEFAULT)
+                    .ccRateKT(TurnDocdataDefaults.RATE_DEFAULT)
+                    .ccValutaDT(TurnDocdataDefaults.CURRENCY_RUB)
+                    .ccValutaKT(TurnDocdataDefaults.CURRENCY_RUB)
+                    .ccValutaTrans(TurnDocdataDefaults.CURRENCY_RUB)
+                    // misc
+                    .ccPriority(TurnDocdataDefaults.PRIORITY_DEFAULT)
+                    .ccSystemId(TurnDocdataDefaults.SYSTEM_ID)
+                    .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID));
 
-            Status status;
-            if (dt == null && kt == null) {
-                status = Status.FAILED;
-            } else if (isComplete(dt) && isComplete(kt)) {
-                status = Status.ENRICHED;
-            } else {
-                status = Status.PARTIALLY_ENRICHED;
-            }
+            enrichDt(b, wt.getCcRegisterDt(), rqUID);
+            enrichKt(b, wt.getCcRegisterKt(), rqUID);
 
-            return b.debit(dt).credit(kt)
-                    .status(status)
-                    .statusDesc(status == Status.FAILED ? "No data resolved" : "OK")
-                    .build();
+            TurnDocdataDraft draft = b.build();
+            applyContraFromKt(draft);
+
+            return rb.status(Status.DRAFT_CREATED).statusDesc("OK").turnDocdata(draft).build();
         } catch (Exception e) {
-            log.warn("Enrichment failed for walletTurnId={}: {}", wt.getCcWalletTurnId(), e.getMessage());
-            return b.status(Status.FAILED).statusDesc(e.getMessage()).build();
+            log.warn("Build draft failed for ccBchOperationId={}: {}",
+                    wt.getCcBchOperationId(), e.getMessage());
+            return rb.status(Status.FAILED).statusDesc(e.getMessage()).build();
         }
     }
 
     /**
-     * Цепочка: registerId → FSKK(ucpId, divisionId) → EPK(orgName, INN) → SFS(BIC, corrAcc).
-     * Каждый шаг последовательный, потому что параметры следующего вызова берутся из предыдущего ответа.
+     * registerDt → FSKK (счёт, BIC, корсчёт, ucpId, divisionId) → EPK (имя/ИНН/КПП).
+     * Названия банков пока не заполняются — позже из НСИ по BIC.
      */
-    private PartyEnrichment enrichByRegister(String registerId, String rqUID) {
-        if (registerId == null || registerId.isBlank()) {
-            return null;
-        }
-
-        GetSberIntegrationResult byRegister = sberClient.getByRegisterId(registerId, rqUID);
+    private void enrichDt(TurnDocdataDraftBuilder b, String registerDt, String rqUID) {
+        GetSberIntegrationResult byRegister = sberClient.getByRegisterId(registerDt, rqUID);
         GetSberIntegrationResult.Fskk fskk = byRegister != null ? byRegister.getFskk() : null;
-        if (fskk == null) {
-            return PartyEnrichment.builder().registerId(registerId).build();
-        }
+        if (fskk == null) return;
 
-        PartyEnrichment.PartyEnrichmentBuilder eb = PartyEnrichment.builder()
-                .registerId(registerId)
-                .accNum(fskk.getAccNum())
-                .accCurrency(fskk.getAccCurrency())
-                .accBic(fskk.getAccBic())
-                .accBankCorrAcc(fskk.getAccBankCorrAcc())
-                .ucpId(fskk.getUcpId())
-                .divisionId(fskk.getDivisionId());
+        b.ccDTAcc(fskk.getAccNum())
+                .ccDTBIC(fskk.getAccBic())
+                .ccDTBankCorrAcc(fskk.getAccBankCorrAcc());
 
         if (fskk.getUcpId() != null && !fskk.getUcpId().isBlank()) {
             GetSberIntegrationResult byUcp = sberClient.getByUcpId(fskk.getUcpId(), rqUID);
             if (byUcp != null && byUcp.getEpk() != null && !byUcp.getEpk().isEmpty()) {
                 GetSberIntegrationResult.Epk epk = byUcp.getEpk().get(0);
-                eb.orgName(epk.getOrgName()).orgINN(epk.getOrgINN()).orgKPP(epk.getOrgKPP());
+                b.ccDTName(epk.getOrgName())
+                        .ccDTINN(epk.getOrgINN())
+                        .ccDTKPP(epk.getOrgKPP());
             }
         }
+    }
 
-        if (fskk.getDivisionId() != null && !fskk.getDivisionId().isBlank()) {
-            GetSberIntegrationResult byDiv = sberClient.getByDivisionId(fskk.getDivisionId(), rqUID);
-            if (byDiv != null && byDiv.getSfs() != null && !byDiv.getSfs().isEmpty()) {
-                GetSberIntegrationResult.Sfs sfs = byDiv.getSfs().get(0);
-                eb.divisionName(sfs.getFullName());
-                if (sfs.getRequisitesDivision() != null) {
-                    GetSberIntegrationResult.RequisitesDivision rd = sfs.getRequisitesDivision();
-                    if (eb.build().getAccBic() == null) {
-                        eb.accBic(rd.getDivBIC());
-                    }
-                    if (eb.build().getAccBankCorrAcc() == null) {
-                        eb.accBankCorrAcc(rd.getCorrespondentAcc());
-                    }
-                }
+    private void enrichKt(TurnDocdataDraftBuilder b, String registerKt, String rqUID) {
+        GetSberIntegrationResult byRegister = sberClient.getByRegisterId(registerKt, rqUID);
+        GetSberIntegrationResult.Fskk fskk = byRegister != null ? byRegister.getFskk() : null;
+        if (fskk == null) return;
+
+        b.ccKTAcc(fskk.getAccNum())
+                .ccKTBIC(fskk.getAccBic())
+                .ccKTBankCorrAcc(fskk.getAccBankCorrAcc());
+
+        if (fskk.getUcpId() != null && !fskk.getUcpId().isBlank()) {
+            GetSberIntegrationResult byUcp = sberClient.getByUcpId(fskk.getUcpId(), rqUID);
+            if (byUcp != null && byUcp.getEpk() != null && !byUcp.getEpk().isEmpty()) {
+                GetSberIntegrationResult.Epk epk = byUcp.getEpk().get(0);
+                b.ccKTName(epk.getOrgName())
+                        .ccKTINN(epk.getOrgINN())
+                        .ccKTKPP(epk.getOrgKPP());
             }
         }
-
-        return eb.build();
     }
 
-    private boolean isComplete(PartyEnrichment p) {
-        return p != null
-                && p.getAccNum() != null
-                && p.getAccBic() != null
-                && p.getOrgName() != null;
-    }
-
-    private String buildSummary(int total, int failed, int partial) {
-        if (failed == total && total > 0) {
-            return "All " + total + " walletTurn(s) failed enrichment";
-        }
-        int ok = total - failed - partial;
-        return "Enriched: " + ok + ", partial: " + partial + ", failed: " + failed;
+    /** ccDT=1 → контрагент = сторона KT. */
+    private void applyContraFromKt(TurnDocdataDraft d) {
+        d.setCcContrName(d.getCcKTName());
+        d.setCcContrINN(d.getCcKTINN());
+        d.setCcContrKPP(d.getCcKTKPP());
+        d.setCcContrAcc(d.getCcKTAcc());
+        d.setCcContrBIC(d.getCcKTBIC());
+        d.setCcContrNameBank(d.getCcKTNameBank());
+        d.setCcContrBankCorrAcc(d.getCcKTBankCorrAcc());
+        d.setCcContrRegisterId(d.getCcKTRegisterId());
     }
 }

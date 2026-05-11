@@ -11,17 +11,14 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class WalletTurnResult {
 
-    private String ccWalletTurnId;
+    private String ccBchOperationId;
     private String ccTransactionId;
     private Status status;
     private String statusDesc;
-
-    private PartyEnrichment debit;
-    private PartyEnrichment credit;
+    private TurnDocdataDraft turnDocdata;
 
     public enum Status {
-        ENRICHED,
-        PARTIALLY_ENRICHED,
+        DRAFT_CREATED,
         FAILED
     }
 }
