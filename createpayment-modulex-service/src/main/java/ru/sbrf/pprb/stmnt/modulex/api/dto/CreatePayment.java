@@ -5,8 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -14,14 +14,8 @@ import java.time.LocalDate;
 @AllArgsConstructor
 public class CreatePayment {
 
-    private String payerAccount;
-    private String payerInn;
-    private String payeeAccount;
-    private String payeeInn;
-    private String payeeName;
-    private BigDecimal amount;
-    private String currency;
-    private String purpose;
-    private LocalDate valueDate;
-    private String externalId;
+    private LocalDateTime rqTm;
+    private String rqUID;
+    private String version;
+    private List<WalletTurnInput> walletTurns;
 }

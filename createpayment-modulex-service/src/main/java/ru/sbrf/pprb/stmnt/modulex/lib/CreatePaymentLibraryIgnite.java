@@ -22,7 +22,7 @@ public class CreatePaymentLibraryIgnite {
 
     public CreatePaymentResponse execute(CreatePayment request) {
         log.debug("CreatePayment via Ignite cache='{}'", igniteProps.getCacheName());
-        // TODO: enrich/persist payment through Ignite thin client
+        // TODO: cache lookups of register/ucp/division resolutions through Ignite thin client
         return delegate.execute(request);
     }
 }

@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -13,14 +14,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class CreatePaymentResponse {
 
-    private String paymentId;
-    private PaymentStatus status;
-    private LocalDateTime createdAt;
-    private String message;
-
-    public enum PaymentStatus {
-        CREATED,
-        REJECTED,
-        DUPLICATE
-    }
+    private String rqUID;
+    private LocalDateTime rqTm;
+    private int statusCode;
+    private String statusDesc;
+    private List<WalletTurnResult> results;
 }

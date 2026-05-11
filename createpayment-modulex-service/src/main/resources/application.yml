@@ -20,6 +20,14 @@ createpayment:
   default-currency: "810"
   purpose-max-length: 210
 
+sber-integration:
+  url: http://stmnt-http.apps.bcivthq2.k8s.delta.sbrf.ru/sberintegration-statement-server/execute
+  method: getSberIntegration
+  version: "1.0"
+  connect-timeout-ms: 5000
+  read-timeout-ms: 15000
+  bic-directory: false
+
 ignite:
   thin-client:
     enabled: false
