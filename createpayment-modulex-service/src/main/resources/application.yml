@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: createpayment-modulex-service
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    date-format: "yyyy-MM-dd'T'HH:mm:ss"
 
 management:
   endpoints:

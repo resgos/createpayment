@@ -1,0 +1,12 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: createpayment-local
+  main:
+    allow-bean-definition-overriding: true
+
+logging:
+  level:
+    ru.sbrf.pprb.stmnt.modulex: DEBUG

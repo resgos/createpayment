@@ -3,6 +3,7 @@ package ru.sbrf.pprb.stmnt.modulex.integration.sber;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -34,11 +35,11 @@ public class SberIntegrationClientImpl implements SberIntegrationClient {
     private final AtomicLong idSeq = new AtomicLong(System.currentTimeMillis());
 
     public SberIntegrationClientImpl(SberIntegrationProperties properties,
-                                     RestTemplate sberRestTemplate,
-                                     ObjectMapper objectMapper) {
+                                     @Qualifier("sberRestTemplate") RestTemplate sberRestTemplate,
+                                     @Qualifier("sberObjectMapper") ObjectMapper sberObjectMapper) {
         this.properties = properties;
         this.restTemplate = sberRestTemplate;
-        this.objectMapper = objectMapper;
+        this.objectMapper = sberObjectMapper;
     }
 
     @Override
