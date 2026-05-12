@@ -145,8 +145,12 @@ public class CreatePaymentLibrary {
     /** registerId → FSKK → EPK. Названия банков подставит applyBicDirectory. */
     private void enrichDt(TurnDocdataDraftBuilder b, String registerDt, String rqUID) {
         GetSberIntegrationResult byRegister = sberClient.getByRegisterId(registerDt, rqUID);
+        logFskk("DT", registerDt, byRegister);
         GetSberIntegrationResult.Fskk fskk = byRegister != null ? byRegister.getFskk() : null;
-        if (fskk == null) return;
+        if (fskk == null) {
+            log.warn("DT: FSKK is null for registerDt={}, skipping ccDT* enrichment", registerDt);
+            return;
+        }
 
         b.ccDTAcc(fskk.getAccNum())
                 .ccDTBIC(fskk.getAccBic())
@@ -154,19 +158,26 @@ public class CreatePaymentLibrary {
 
         if (fskk.getUcpId() != null && !fskk.getUcpId().isBlank()) {
             GetSberIntegrationResult byUcp = sberClient.getByUcpId(fskk.getUcpId(), rqUID);
+            logEpk("DT", fskk.getUcpId(), byUcp);
             if (byUcp != null && byUcp.getEpk() != null && !byUcp.getEpk().isEmpty()) {
                 GetSberIntegrationResult.Epk epk = byUcp.getEpk().get(0);
                 b.ccDTName(epk.getOrgName())
                         .ccDTINN(epk.getOrgINN())
                         .ccDTKPP(epk.getOrgKPP());
             }
+        } else {
+            log.warn("DT: FSKK.ucpId is empty for registerDt={}, skipping EPK lookup", registerDt);
         }
     }
 
     private void enrichKt(TurnDocdataDraftBuilder b, String registerKt, String rqUID) {
         GetSberIntegrationResult byRegister = sberClient.getByRegisterId(registerKt, rqUID);
+        logFskk("KT", registerKt, byRegister);
         GetSberIntegrationResult.Fskk fskk = byRegister != null ? byRegister.getFskk() : null;
-        if (fskk == null) return;
+        if (fskk == null) {
+            log.warn("KT: FSKK is null for registerKt={}, skipping ccKT* enrichment", registerKt);
+            return;
+        }
 
         b.ccKTAcc(fskk.getAccNum())
                 .ccKTBIC(fskk.getAccBic())
@@ -174,13 +185,47 @@ public class CreatePaymentLibrary {
 
         if (fskk.getUcpId() != null && !fskk.getUcpId().isBlank()) {
             GetSberIntegrationResult byUcp = sberClient.getByUcpId(fskk.getUcpId(), rqUID);
+            logEpk("KT", fskk.getUcpId(), byUcp);
             if (byUcp != null && byUcp.getEpk() != null && !byUcp.getEpk().isEmpty()) {
                 GetSberIntegrationResult.Epk epk = byUcp.getEpk().get(0);
                 b.ccKTName(epk.getOrgName())
                         .ccKTINN(epk.getOrgINN())
                         .ccKTKPP(epk.getOrgKPP());
             }
+        } else {
+            log.warn("KT: FSKK.ucpId is empty for registerKt={}, skipping EPK lookup", registerKt);
         }
+    }
+
+    private void logFskk(String side, String registerId, GetSberIntegrationResult res) {
+        if (res == null) {
+            log.warn("{}: sber returned null response for registerId={}", side, registerId);
+            return;
+        }
+        GetSberIntegrationResult.Fskk f = res.getFskk();
+        if (f == null) {
+            log.warn("{}: sber response has FSKK=null, top-level statusCode={}, statusDesc={}",
+                    side, res.getStatusCode(), res.getStatusDesc());
+            return;
+        }
+        log.debug("{}: FSKK registerId={} → accNum={}, accBic={}, accBankCorrAcc={}, ucpId={}, divisionId={}, statusCode={}, statusDesc={}",
+                side, registerId, f.getAccNum(), f.getAccBic(), f.getAccBankCorrAcc(),
+                f.getUcpId(), f.getDivisionId(), f.getStatusCode(), f.getStatusDesc());
+    }
+
+    private void logEpk(String side, String ucpId, GetSberIntegrationResult res) {
+        if (res == null) {
+            log.warn("{}: sber returned null response for ucpId={}", side, ucpId);
+            return;
+        }
+        if (res.getEpk() == null || res.getEpk().isEmpty()) {
+            log.warn("{}: sber response has empty EPK for ucpId={}, statusCode={}, statusDesc={}",
+                    side, ucpId, res.getStatusCode(), res.getStatusDesc());
+            return;
+        }
+        GetSberIntegrationResult.Epk e = res.getEpk().get(0);
+        log.debug("{}: EPK ucpId={} → orgName={}, orgINN={}, orgKPP={}, statusCode={}",
+                side, ucpId, e.getOrgName(), e.getOrgINN(), e.getOrgKPP(), e.getStatusCode());
     }
 
     /** Подставляет название банка и корсчёт из NSI.bicDirectory по BIC. */
