@@ -18,6 +18,15 @@ management:
     health:
       show-details: always
 
+pgw:
+  enabled: true
+  url: https://ingress-pgw-4g-ift.https.dev-sh5.ocp-geo.delta.sbrf.ru
+  transfer-path: /upd/transfer
+  connect-timeout-ms: 5000
+  read-timeout-ms: 30000
+  max-attempts: 3
+  retry-delay-ms: 30000
+
 sber-integration:
   url: http://stmnt-http.apps.bcivthq2.k8s.delta.sbrf.ru/sberintegration-statement-server/execute
   method: getSberIntegration

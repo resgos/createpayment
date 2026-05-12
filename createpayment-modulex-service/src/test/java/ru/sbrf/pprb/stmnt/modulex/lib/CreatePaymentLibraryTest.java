@@ -3,6 +3,7 @@ package ru.sbrf.pprb.stmnt.modulex.lib;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -12,6 +13,9 @@ import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnInput;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult.Status;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.UPDDTO;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.Participant;
@@ -25,6 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -51,12 +56,16 @@ class CreatePaymentLibraryTest {
     @Mock
     private TurnDocdataIdGenerator idGenerator;
 
+    @Mock
+    private PgwClient pgwClient;
+
     private CreatePaymentLibrary library;
 
     @BeforeEach
     void setUp() {
         SimpleValidator validator = new SimpleValidator();
-        library = new CreatePaymentLibrary(validator, sberClient, idGenerator, new Pacs008Builder());
+        library = new CreatePaymentLibrary(validator, sberClient, idGenerator,
+                new Pacs008Builder(), pgwClient);
 
         lenient().when(idGenerator.operationId()).thenReturn(GEN_OPERATION_ID);
         lenient().when(idGenerator.transactionId()).thenReturn(GEN_TX_ID);
@@ -65,6 +74,13 @@ class CreatePaymentLibraryTest {
 
         // По умолчанию справочник банков пустой — отдельные тесты переопределяют.
         lenient().when(sberClient.getBicDirectory(anyString())).thenReturn(emptyDirectoryResult());
+
+        // PGW по умолчанию возвращает correlationId = requestId.
+        lenient().when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
+                .thenAnswer(inv -> ApiResult.builder()
+                        .correlationId(inv.getArgument(0))
+                        .status("OK")
+                        .build());
     }
 
     @Test
@@ -165,6 +181,58 @@ class CreatePaymentLibraryTest {
 
         assertThat(d.getDtBranchCode()).isEqualTo("38");
         assertThat(d.getKtBranchCode()).isEqualTo("38");
+    }
+
+    @Test
+    void pgwTransferUpdSentAfterPacs008WithCorrectFields() {
+        mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "DT", "i", "k");
+        mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "KT", "i", "k");
+
+        ArgumentCaptor<UPDDTO> updCaptor = ArgumentCaptor.forClass(UPDDTO.class);
+        ArgumentCaptor<String> reqIdCaptor = ArgumentCaptor.forClass(String.class);
+        when(pgwClient.transferUpd(reqIdCaptor.capture(), updCaptor.capture()))
+                .thenReturn(ApiResult.builder()
+                        .correlationId("CORR-1")
+                        .idempotencyKey("IDEMP-1")
+                        .status("OK")
+                        .build());
+
+        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.TEN))
+                .getResults().get(0).getTurnDocdata();
+
+        assertThat(reqIdCaptor.getValue()).isEqualTo(GEN_RQ_UID);
+
+        UPDDTO upd = updCaptor.getValue();
+        assertThat(upd.getUpdUID()).isEqualTo(GEN_OPERATION_ID);
+        assertThat(upd.getUpdType()).isEqualTo("pacs.008.001.08");
+        assertThat(upd.getSendModuleId()).isEqualTo("stmnt-giganetwork");
+        assertThat(upd.getSendServiceId()).isEqualTo(GEN_TX_ID);
+        assertThat(upd.getRcvModuleId()).isEqualTo("in-house-execution-payment");
+        assertThat(upd.getOriginalMessage()).contains("<MsgId>" + GEN_OPERATION_ID + "</MsgId>");
+        assertThat(upd.getMsgAttributes())
+                .containsEntry("ParentID", GEN_OPERATION_ID)
+                .containsEntry("registerId", REG_DT)
+                .containsEntry("execute_on_debit", "0")
+                .containsEntry("compress", "0");
+
+        assertThat(d.getPgwCorrelationId()).isEqualTo("CORR-1");
+        assertThat(d.getCcIdempotencyKey()).isEqualTo("IDEMP-1");
+    }
+
+    @Test
+    void pgwFailureMarksWalletTurnAsFailed() {
+        mockSber(REG_DT, UCP_DT, "acc", "bic", "corr", "n", "i", "k");
+        mockSber(REG_KT, UCP_KT, "acc", "bic", "corr", "n", "i", "k");
+
+        when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
+                .thenThrow(new IllegalStateException("PGW unreachable"));
+
+        WalletTurnResult result = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
+                .getResults().get(0);
+
+        assertThat(result.getStatus()).isEqualTo(WalletTurnResult.Status.FAILED);
+        assertThat(result.getStatusDesc()).contains("PGW unreachable");
+        assertThat(result.getTurnDocdata()).isNull();
     }
 
     @Test

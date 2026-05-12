@@ -119,4 +119,7 @@ public class TurnDocdataDraft {
 
     /** Сформированный XML pacs.008.001.08 для отправки в PGW. */
     private String pacs008Xml;
+
+    /** correlationId из синхронного ответа PGW на transferUpd. */
+    private String pgwCorrelationId;
 }

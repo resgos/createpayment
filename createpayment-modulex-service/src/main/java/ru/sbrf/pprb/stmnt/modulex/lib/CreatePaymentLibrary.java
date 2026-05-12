@@ -9,6 +9,9 @@ import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnInput;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult.Status;
 import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.UPDDTO;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.Participant;
@@ -24,19 +27,29 @@ import java.util.Map;
 @Slf4j
 public class CreatePaymentLibrary {
 
+    private static final String PACS_008_TYPE = "pacs.008.001.08";
+    private static final String RCV_MODULE_ID = "in-house-execution-payment";
+    private static final String MSG_ATTR_PARENT_ID = "ParentID";
+    private static final String MSG_ATTR_REGISTER_ID = "registerId";
+    private static final String MSG_ATTR_EXECUTE_ON_DEBIT = "execute_on_debit";
+    private static final String MSG_ATTR_COMPRESS = "compress";
+
     private final SimpleValidator simpleValidator;
     private final SberIntegrationClient sberClient;
     private final TurnDocdataIdGenerator idGenerator;
     private final Pacs008Builder pacs008Builder;
+    private final PgwClient pgwClient;
 
     public CreatePaymentLibrary(SimpleValidator simpleValidator,
                                 SberIntegrationClient sberClient,
                                 TurnDocdataIdGenerator idGenerator,
-                                Pacs008Builder pacs008Builder) {
+                                Pacs008Builder pacs008Builder,
+                                PgwClient pgwClient) {
         this.simpleValidator = simpleValidator;
         this.sberClient = sberClient;
         this.idGenerator = idGenerator;
         this.pacs008Builder = pacs008Builder;
+        this.pgwClient = pgwClient;
     }
 
     public CreatePaymentResponse execute(CreatePayment request) {
@@ -139,12 +152,10 @@ public class CreatePaymentLibrary {
             applyBicDirectory(draft, bicDirectory);
             applyContraFromKt(draft);
 
-            try {
-                draft.setPacs008Xml(pacs008Builder.build(draft));
-            } catch (Exception e) {
-                log.warn("Pacs008 build failed for ccOperationId={}: {}",
-                        draft.getCcOperationId(), e.getMessage());
-            }
+            String xml = pacs008Builder.build(draft);
+            draft.setPacs008Xml(xml);
+
+            sendToPgw(draft, xml);
 
             return rb.status(Status.DRAFT_CREATED).statusDesc("OK").turnDocdata(draft).build();
         } catch (Exception e) {
@@ -265,6 +276,37 @@ public class CreatePaymentLibrary {
 
     private String branchCode(Sfs sfs) {
         return sfs.getCodeOSB() != null ? sfs.getCodeOSB() : sfs.getCodeTB();
+    }
+
+    private void sendToPgw(TurnDocdataDraft draft, String pacs008Xml) {
+        UPDDTO updDTO = buildUpdDto(draft, pacs008Xml);
+        ApiResult result = pgwClient.transferUpd(draft.getCcRqUId(), updDTO);
+        draft.setPgwCorrelationId(result.getCorrelationId());
+        if (result.getIdempotencyKey() != null) {
+            draft.setCcIdempotencyKey(result.getIdempotencyKey());
+        }
+        log.debug("PGW response for ccOperationId={}: correlationId={}, status={}",
+                draft.getCcOperationId(), result.getCorrelationId(), result.getStatus());
+    }
+
+    private UPDDTO buildUpdDto(TurnDocdataDraft d, String pacs008Xml) {
+        Map<String, String> attrs = new HashMap<>();
+        attrs.put(MSG_ATTR_PARENT_ID, d.getCcOperationId());
+        if (d.getCcRegisterId() != null) {
+            attrs.put(MSG_ATTR_REGISTER_ID, d.getCcRegisterId());
+        }
+        attrs.put(MSG_ATTR_EXECUTE_ON_DEBIT, "0");
+        attrs.put(MSG_ATTR_COMPRESS, "0");
+
+        return UPDDTO.builder()
+                .updUID(d.getCcOperationId())
+                .updType(PACS_008_TYPE)
+                .sendModuleId(d.getCcSystemId())
+                .sendServiceId(d.getCcTransactionId())
+                .rcvModuleId(RCV_MODULE_ID)
+                .msgAttributes(attrs)
+                .originalMessage(pacs008Xml)
+                .build();
     }
 
     private void logFskk(String side, String registerId, GetSberIntegrationResult res) {

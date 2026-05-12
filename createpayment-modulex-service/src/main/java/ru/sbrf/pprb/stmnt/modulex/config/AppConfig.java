@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.web.client.RestTemplate;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
 import ru.sbrf.pprb.stmnt.modulex.lib.Pacs008Builder;
@@ -28,7 +29,8 @@ import java.time.format.DateTimeFormatter;
 @EnableAutoConfiguration
 @ComponentScan({"ru.sbrf.pprb.stmnt"})
 @EnableConfigurationProperties({
-        SberIntegrationProperties.class
+        SberIntegrationProperties.class,
+        PgwProperties.class
 })
 public class AppConfig {
 
@@ -52,12 +54,28 @@ public class AppConfig {
     public RestTemplate sberRestTemplate(RestTemplateBuilder builder,
                                          SberIntegrationProperties sberProps,
                                          ObjectMapper sberObjectMapper) {
-        RestTemplate rt = builder
-                .setConnectTimeout(Duration.ofMillis(sberProps.getConnectTimeoutMs()))
-                .setReadTimeout(Duration.ofMillis(sberProps.getReadTimeoutMs()))
-                .build();
+        return jsonRestTemplate(builder,
+                sberProps.getConnectTimeoutMs(), sberProps.getReadTimeoutMs(),
+                sberObjectMapper);
+    }
 
-        MappingJackson2HttpMessageConverter jsonConverter = new MappingJackson2HttpMessageConverter(sberObjectMapper);
+    @Bean
+    public RestTemplate pgwRestTemplate(RestTemplateBuilder builder,
+                                        PgwProperties pgwProps,
+                                        ObjectMapper sberObjectMapper) {
+        return jsonRestTemplate(builder,
+                pgwProps.getConnectTimeoutMs(), pgwProps.getReadTimeoutMs(),
+                sberObjectMapper);
+    }
+
+    private RestTemplate jsonRestTemplate(RestTemplateBuilder builder,
+                                          int connectTimeoutMs, int readTimeoutMs,
+                                          ObjectMapper om) {
+        RestTemplate rt = builder
+                .setConnectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .setReadTimeout(Duration.ofMillis(readTimeoutMs))
+                .build();
+        MappingJackson2HttpMessageConverter jsonConverter = new MappingJackson2HttpMessageConverter(om);
         for (int i = 0; i < rt.getMessageConverters().size(); i++) {
             HttpMessageConverter<?> conv = rt.getMessageConverters().get(i);
             if (conv instanceof MappingJackson2HttpMessageConverter) {
@@ -73,7 +91,9 @@ public class AppConfig {
     public CreatePaymentLibrary createPaymentLibrary(SimpleValidator simpleValidator,
                                                      SberIntegrationClient sberIntegrationClient,
                                                      TurnDocdataIdGenerator idGenerator,
-                                                     Pacs008Builder pacs008Builder) {
-        return new CreatePaymentLibrary(simpleValidator, sberIntegrationClient, idGenerator, pacs008Builder);
+                                                     Pacs008Builder pacs008Builder,
+                                                     PgwClient pgwClient) {
+        return new CreatePaymentLibrary(simpleValidator, sberIntegrationClient, idGenerator,
+                pacs008Builder, pgwClient);
     }
 }

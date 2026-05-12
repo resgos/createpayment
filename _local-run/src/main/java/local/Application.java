@@ -6,6 +6,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Primary;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
+import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.UPDDTO;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult;
 
@@ -87,6 +90,22 @@ public class Application {
                 result.setStatusCode(0);
                 result.setSfs(List.of(sfs));
                 return result;
+            }
+        };
+    }
+
+    /** Заглушка PGW — не делает реальный HTTP, просто возвращает correlationId = requestId. */
+    @Bean
+    @Primary
+    public PgwClient stubPgwClient() {
+        return new PgwClient() {
+            @Override
+            public ApiResult transferUpd(String requestId, UPDDTO updDTO) {
+                return ApiResult.builder()
+                        .correlationId(requestId)
+                        .status("STUB_OK")
+                        .message("Local stub — no real PGW call")
+                        .build();
             }
         };
     }
