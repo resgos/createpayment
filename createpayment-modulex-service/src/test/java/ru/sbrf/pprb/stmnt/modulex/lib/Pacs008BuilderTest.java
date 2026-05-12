@@ -105,29 +105,96 @@ class Pacs008BuilderTest {
     }
 
     @Test
-    void taxRmtSectionAppearsWhenBudgetFieldsPresent() {
+    void taxRmtAlwaysPresentWithMvpDefaults() {
+        // MVP: TaxRmt отправляется всегда. Бюджетные поля = "0",
+        // КПП плательщика/получателя — реальные значения.
+        TurnDocdataDraft d = sampleDraft();
+
+        String xml = builder.build(d);
+
+        assertThat(xml).contains("<TaxRmt>");
+        assertThat(xml).contains("<Cdtr>");
+        assertThat(xml).contains("<RegnId>0</RegnId>");
+        assertThat(xml).contains("<TaxTp>780001001</TaxTp>");  // ccKTKPP
+        assertThat(xml).contains("<Dbtr>");
+        assertThat(xml).contains("<TaxTp>773601001</TaxTp>");  // ccDTKPP
+        assertThat(xml).contains("<AdmstnZone>0</AdmstnZone>");
+        assertThat(xml).contains("<RefNb>0</RefNb>");
+        assertThat(xml).contains("<Mtd>0</Mtd>");
+    }
+
+    @Test
+    void taxRmtUsesRealValuesWhenPresent() {
         TurnDocdataDraft d = sampleDraft();
         d.setCcKbk("18210301000011000110");
         d.setCcOktmo("45382000");
         d.setCcDocNumber108("ТР41797");
         d.setCcDrawerStatus101("01");
+        d.setCcTaxPeriod107("2026");
 
         String xml = builder.build(d);
 
-        assertThat(xml).contains("<TaxRmt>");
+        assertThat(xml).contains("<RegnId>2026</RegnId>");
         assertThat(xml).contains("<AdmstnZone>45382000</AdmstnZone>");
         assertThat(xml).contains("<RefNb>ТР41797</RefNb>");
         assertThat(xml).contains("<CtgyDtls>18210301000011000110</CtgyDtls>");
         assertThat(xml).contains("<DbtrSts>01</DbtrSts>");
+        assertThat(xml).contains("<Yr>2026-01-01</Yr>");
     }
 
     @Test
-    void taxRmtOmittedWhenNoBudgetFields() {
+    void dtUsedWhenDocDate109LooksLikeIsoDate() {
+        TurnDocdataDraft d = sampleDraft();
+        d.setCcDocDate109("2017-01-31");
+
+        String xml = builder.build(d);
+
+        assertThat(xml).contains("<Mtd>0</Mtd>");
+        assertThat(xml).contains("<Dt>2017-01-31</Dt>");
+    }
+
+    @Test
+    void mtdUsedWhenDocDate109IsNotIsoDate() {
+        TurnDocdataDraft d = sampleDraft();
+        d.setCcDocDate109("00");
+
+        String xml = builder.build(d);
+
+        assertThat(xml).contains("<Mtd>00</Mtd>");
+        assertThat(xml).doesNotContain("<Dt>");
+    }
+
+    @Test
+    void prdTpUsedForPeriodCode() {
+        TurnDocdataDraft d = sampleDraft();
+        d.setCcTaxPeriod107("QTR2");
+        d.setCcKbk("kbk-x");
+
+        String xml = builder.build(d);
+
+        assertThat(xml).contains("<Prd>");
+        assertThat(xml).contains("<Tp>QTR2</Tp>");
+    }
+
+    @Test
+    void prdYrUsedForFullDate() {
+        TurnDocdataDraft d = sampleDraft();
+        d.setCcTaxPeriod107("2026-04-01");
+        d.setCcKbk("kbk-x");
+
+        String xml = builder.build(d);
+
+        assertThat(xml).contains("<Yr>2026-04-01</Yr>");
+    }
+
+    @Test
+    void creDtTmIncludesGmtPlus3Offset() {
         TurnDocdataDraft d = sampleDraft();
 
         String xml = builder.build(d);
 
-        assertThat(xml).doesNotContain("<TaxRmt>");
+        // 2026-05-12T12:34:56+03:00 — фиксированный offset GMT+3
+        assertThat(xml).containsPattern("<CreDtTm>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+03:00</CreDtTm>");
     }
 
     @Test
@@ -147,7 +214,10 @@ class Pacs008BuilderTest {
         assertThat(xml).contains("<MsgId>op-min</MsgId>");
         assertThat(xml).doesNotContain("<DbtrAcct>");
         assertThat(xml).doesNotContain("<CdtrAcct>");
-        assertThat(xml).doesNotContain("<RmtInf>");
+        // RmtInf всегда есть из-за обязательного TaxRmt на MVP
+        assertThat(xml).contains("<RmtInf>");
+        assertThat(xml).contains("<TaxRmt>");
+        assertThat(xml).contains("<RegnId>0</RegnId>");
     }
 
     private TurnDocdataDraft sampleDraft() {

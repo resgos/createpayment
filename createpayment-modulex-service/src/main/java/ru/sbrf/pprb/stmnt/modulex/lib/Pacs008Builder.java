@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
+import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -16,12 +17,14 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.StringWriter;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.regex.Pattern;
 
 /**
  * Сборка FI To FI Customer Credit Transfer V08 (pacs.008.001.08) из TurnDocdataDraft.
- * Маппинг — согласно методологии (см. документ).
+ * Маппинг — согласно методологии (CSV спека).
  */
 @Slf4j
 @Component
@@ -30,8 +33,12 @@ public class Pacs008Builder {
     private static final String NS = "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08";
     private static final int NAME_MAX = 140;
     private static final int CONTACT_TAIL = 20;
-    private static final DateTimeFormatter ISO_DATE_TIME = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final String DEFAULT_BUDGET = "0";
+    private static final Pattern ISO_DATE_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+    private static final Pattern PERIOD_TYPE_PATTERN = Pattern.compile("MM\\d{2}|QTR[1-4]|HLF[12]");
+    private static final Pattern YEAR_PATTERN = Pattern.compile("\\d{4}");
     private static final DateTimeFormatter ISO_DATE = DateTimeFormatter.ISO_LOCAL_DATE;
+    private static final DateTimeFormatter ISO_OFFSET = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     public String build(TurnDocdataDraft d) {
         try {
@@ -58,7 +65,9 @@ public class Pacs008Builder {
     private void appendGrpHdr(Document doc, Element parent, TurnDocdataDraft d) {
         Element grpHdr = elem(doc, parent, "GrpHdr");
         text(doc, grpHdr, "MsgId", d.getCcOperationId());
-        text(doc, grpHdr, "CreDtTm", LocalDateTime.now().format(ISO_DATE_TIME));
+        // CreDtTm c offset, без долей секунды: e.g. 2026-05-12T12:34:56+03:00
+        text(doc, grpHdr, "CreDtTm",
+                OffsetDateTime.now(AppConfig.ZONE_ID).truncatedTo(ChronoUnit.SECONDS).format(ISO_OFFSET));
         text(doc, grpHdr, "NbOfTxs", "1");
         Element sttlmInf = elem(doc, grpHdr, "SttlmInf");
         text(doc, sttlmInf, "SttlmMtd", "INDA");
@@ -147,61 +156,88 @@ public class Pacs008Builder {
     }
 
     private void appendRmtInf(Document doc, Element parent, TurnDocdataDraft d) {
-        boolean hasPurpose = d.getCcPurpose() != null && !d.getCcPurpose().isBlank();
-        boolean hasDoc = d.getCcNum() != null || d.getCcDateDoc() != null;
-        boolean hasTax = anyBudgetField(d);
-        if (!hasPurpose && !hasDoc && !hasTax) return;
-
+        // На MVP TaxRmt всегда присутствует (бюджетные реквизиты заглушкой "0"),
+        // поэтому RmtInf и Strd тоже всегда выпускаем.
         Element rmtInf = elem(doc, parent, "RmtInf");
-        if (hasPurpose) {
+        if (d.getCcPurpose() != null && !d.getCcPurpose().isBlank()) {
             text(doc, rmtInf, "Ustrd", d.getCcPurpose());
         }
-        if (hasDoc || hasTax) {
-            Element strd = elem(doc, rmtInf, "Strd");
-            if (hasDoc) {
-                Element rfrd = elem(doc, strd, "RfrdDocInf");
-                Element tp = elem(doc, rfrd, "Tp");
-                Element cdOrPrtry = elem(doc, tp, "CdOrPrtry");
-                text(doc, cdOrPrtry, "Prtry", "POD");
-                text(doc, rfrd, "Nb", d.getCcNum());
-                if (d.getCcDateDoc() != null) {
-                    text(doc, rfrd, "RltdDt", d.getCcDateDoc().toLocalDate().format(ISO_DATE));
-                }
-            }
-            if (hasTax) {
-                appendTaxRmt(doc, strd, d);
-            }
-        }
+        Element strd = elem(doc, rmtInf, "Strd");
+        appendRfrdDocInf(doc, strd, d);
+        appendTaxRmt(doc, strd, d);
     }
 
-    private boolean anyBudgetField(TurnDocdataDraft d) {
-        return d.getCcKbk() != null || d.getCcOktmo() != null
-                || d.getCcDrawerStatus101() != null || d.getCcReasonCode106() != null
-                || d.getCcTaxPeriod107() != null || d.getCcDocNumber108() != null
-                || d.getCcDocDate109() != null || d.getCcPaymentKind110() != null;
+    private void appendRfrdDocInf(Document doc, Element parent, TurnDocdataDraft d) {
+        boolean hasDoc = d.getCcNum() != null || d.getCcDateDoc() != null;
+        if (!hasDoc) return;
+        Element rfrd = elem(doc, parent, "RfrdDocInf");
+        Element tp = elem(doc, rfrd, "Tp");
+        Element cdOrPrtry = elem(doc, tp, "CdOrPrtry");
+        text(doc, cdOrPrtry, "Prtry", "POD");
+        text(doc, rfrd, "Nb", d.getCcNum());
+        if (d.getCcDateDoc() != null) {
+            text(doc, rfrd, "RltdDt", d.getCcDateDoc().toLocalDate().format(ISO_DATE));
+        }
     }
 
     private void appendTaxRmt(Document doc, Element parent, TurnDocdataDraft d) {
         Element taxRmt = elem(doc, parent, "TaxRmt");
 
         Element cdtr = elem(doc, taxRmt, "Cdtr");
-        text(doc, cdtr, "RegnId", d.getCcTaxPeriod107());
-        text(doc, cdtr, "TaxTp", d.getCcKTKPP());
+        text(doc, cdtr, "RegnId", nz(d.getCcTaxPeriod107(), DEFAULT_BUDGET));
+        if (d.getCcKTKPP() != null && !d.getCcKTKPP().isBlank()) {
+            text(doc, cdtr, "TaxTp", d.getCcKTKPP());
+        }
 
-        Element dbtr = elem(doc, taxRmt, "Dbtr");
-        text(doc, dbtr, "TaxTp", d.getCcDTKPP());
+        if (d.getCcDTKPP() != null && !d.getCcDTKPP().isBlank()) {
+            Element dbtr = elem(doc, taxRmt, "Dbtr");
+            text(doc, dbtr, "TaxTp", d.getCcDTKPP());
+        }
 
-        text(doc, taxRmt, "AdmstnZone", d.getCcOktmo());
-        text(doc, taxRmt, "RefNb", d.getCcDocNumber108());
-        text(doc, taxRmt, "Mtd", d.getCcDocDate109());
+        text(doc, taxRmt, "AdmstnZone", nz(d.getCcOktmo(), DEFAULT_BUDGET));
+        text(doc, taxRmt, "RefNb", nz(d.getCcDocNumber108(), DEFAULT_BUDGET));
 
-        if (d.getCcKbk() != null || d.getCcReasonCode106() != null
-                || d.getCcDrawerStatus101() != null || d.getCcPaymentKind110() != null) {
-            Element rcrd = elem(doc, taxRmt, "Rcrd");
-            text(doc, rcrd, "Tp", d.getCcPaymentKind110());
-            text(doc, rcrd, "Ctgy", d.getCcReasonCode106());
-            text(doc, rcrd, "CtgyDtls", d.getCcKbk());
-            text(doc, rcrd, "DbtrSts", d.getCcDrawerStatus101());
+        // Mtd / Dt по формату ccDocDate109
+        String docDate = d.getCcDocDate109();
+        if (docDate != null && ISO_DATE_PATTERN.matcher(docDate).matches()) {
+            text(doc, taxRmt, "Mtd", DEFAULT_BUDGET);
+            text(doc, taxRmt, "Dt", docDate);
+        } else {
+            text(doc, taxRmt, "Mtd", nz(docDate, DEFAULT_BUDGET));
+        }
+
+        appendTaxRcrd(doc, taxRmt, d);
+    }
+
+    private void appendTaxRcrd(Document doc, Element parent, TurnDocdataDraft d) {
+        boolean hasRcrd = d.getCcKbk() != null || d.getCcReasonCode106() != null
+                || d.getCcDrawerStatus101() != null || d.getCcPaymentKind110() != null
+                || d.getCcTaxPeriod107() != null;
+        if (!hasRcrd) return;
+
+        Element rcrd = elem(doc, parent, "Rcrd");
+        if (d.getCcPaymentKind110() != null) text(doc, rcrd, "Tp", d.getCcPaymentKind110());
+        if (d.getCcReasonCode106() != null) text(doc, rcrd, "Ctgy", d.getCcReasonCode106());
+        if (d.getCcKbk() != null) text(doc, rcrd, "CtgyDtls", d.getCcKbk());
+        if (d.getCcDrawerStatus101() != null) text(doc, rcrd, "DbtrSts", d.getCcDrawerStatus101());
+        appendTaxPrd(doc, rcrd, d.getCcTaxPeriod107());
+    }
+
+    /**
+     * ccTaxPeriod107 может быть: код периода (MM01..MM12 / QTR1..QTR4 / HLF1..HLF2),
+     * год ("2026"), полная дата ("2026-01-01"). Распознаём и кладём в нужное поле.
+     */
+    private void appendTaxPrd(Document doc, Element parent, String taxPeriod) {
+        if (taxPeriod == null || taxPeriod.isBlank()) return;
+        Element prd = elem(doc, parent, "Prd");
+        if (PERIOD_TYPE_PATTERN.matcher(taxPeriod).matches()) {
+            text(doc, prd, "Tp", taxPeriod);
+        } else if (ISO_DATE_PATTERN.matcher(taxPeriod).matches()) {
+            text(doc, prd, "Yr", taxPeriod);
+        } else if (YEAR_PATTERN.matcher(taxPeriod).matches()) {
+            text(doc, prd, "Yr", taxPeriod + "-01-01");
+        } else {
+            text(doc, prd, "Yr", taxPeriod);
         }
     }
 
@@ -237,7 +273,7 @@ public class Pacs008Builder {
     }
 
     private String nz(String value, String fallback) {
-        return value != null ? value : fallback;
+        return value != null && !value.isBlank() ? value : fallback;
     }
 
     private String serialize(Document doc) throws TransformerException {
