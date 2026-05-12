@@ -77,6 +77,7 @@ public class Application {
                 GetSberIntegrationResult.Sfs sfs = new GetSberIntegrationResult.Sfs();
                 sfs.setDivisionId(divisionId);
                 sfs.setCodeTB("38");
+                sfs.setCodeOSB("9038");
                 sfs.setFullName("Доп.офис №9038/01697");
                 sfs.setRequisitesDivision(rd);
                 sfs.setStatusCode(0);

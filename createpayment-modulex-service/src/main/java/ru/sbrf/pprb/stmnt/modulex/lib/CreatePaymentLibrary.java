@@ -12,6 +12,7 @@ import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.Participant;
+import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.Sfs;
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.time.LocalDateTime;
@@ -130,8 +131,9 @@ public class CreatePaymentLibrary {
                     .ccSystemId(TurnDocdataDefaults.SYSTEM_ID)
                     .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID));
 
-            enrichDt(b, wt.getCcRegisterDt(), rqUID);
-            enrichKt(b, wt.getCcRegisterKt(), rqUID);
+            Map<String, Sfs> sfsCache = new HashMap<>();
+            enrichDt(b, wt.getCcRegisterDt(), rqUID, sfsCache);
+            enrichKt(b, wt.getCcRegisterKt(), rqUID, sfsCache);
 
             TurnDocdataDraft draft = b.build();
             applyBicDirectory(draft, bicDirectory);
@@ -152,8 +154,9 @@ public class CreatePaymentLibrary {
         }
     }
 
-    /** registerId → FSKK → EPK. Названия банков подставит applyBicDirectory. */
-    private void enrichDt(TurnDocdataDraftBuilder b, String registerDt, String rqUID) {
+    /** registerId → FSKK → EPK (по ucpId) + SFS (по divisionId). */
+    private void enrichDt(TurnDocdataDraftBuilder b, String registerDt, String rqUID,
+                          Map<String, Sfs> sfsCache) {
         GetSberIntegrationResult byRegister = sberClient.getByRegisterId(registerDt, rqUID);
         logFskk("DT", registerDt, byRegister);
         GetSberIntegrationResult.Fskk fskk = byRegister != null ? byRegister.getFskk() : null;
@@ -164,7 +167,8 @@ public class CreatePaymentLibrary {
 
         b.ccDTAcc(fskk.getAccNum())
                 .ccDTBIC(fskk.getAccBic())
-                .ccDTBankCorrAcc(fskk.getAccBankCorrAcc());
+                .ccDTBankCorrAcc(fskk.getAccBankCorrAcc())
+                .ccDivisionId(fskk.getDivisionId());
 
         if (fskk.getUcpId() != null && !fskk.getUcpId().isBlank()) {
             GetSberIntegrationResult byUcp = sberClient.getByUcpId(fskk.getUcpId(), rqUID);
@@ -178,9 +182,15 @@ public class CreatePaymentLibrary {
         } else {
             log.warn("DT: FSKK.ucpId is empty for registerDt={}, skipping EPK lookup", registerDt);
         }
+
+        Sfs sfs = resolveSfs(fskk.getDivisionId(), rqUID, sfsCache);
+        if (sfs != null) {
+            b.dtBranchCode(branchCode(sfs));
+        }
     }
 
-    private void enrichKt(TurnDocdataDraftBuilder b, String registerKt, String rqUID) {
+    private void enrichKt(TurnDocdataDraftBuilder b, String registerKt, String rqUID,
+                          Map<String, Sfs> sfsCache) {
         GetSberIntegrationResult byRegister = sberClient.getByRegisterId(registerKt, rqUID);
         logFskk("KT", registerKt, byRegister);
         GetSberIntegrationResult.Fskk fskk = byRegister != null ? byRegister.getFskk() : null;
@@ -205,6 +215,56 @@ public class CreatePaymentLibrary {
         } else {
             log.warn("KT: FSKK.ucpId is empty for registerKt={}, skipping EPK lookup", registerKt);
         }
+
+        Sfs sfs = resolveSfs(fskk.getDivisionId(), rqUID, sfsCache);
+        if (sfs != null) {
+            b.ktBranchCode(branchCode(sfs));
+        }
+    }
+
+    /** Кешированный запрос SFS по divisionId. Возвращает запись с тем же divisionId. */
+    private Sfs resolveSfs(String divisionId, String rqUID, Map<String, Sfs> cache) {
+        if (divisionId == null || divisionId.isBlank()) return null;
+        if (cache.containsKey(divisionId)) {
+            return cache.get(divisionId);
+        }
+        try {
+            GetSberIntegrationResult res = sberClient.getByDivisionId(divisionId, rqUID);
+            Sfs match = null;
+            if (res != null && res.getSfs() != null) {
+                for (Sfs s : res.getSfs()) {
+                    if (divisionId.equals(s.getDivisionId())) {
+                        match = s;
+                        break;
+                    }
+                }
+                // fallback: самая специфичная (с codeOSB)
+                if (match == null) {
+                    for (Sfs s : res.getSfs()) {
+                        if (s.getCodeOSB() != null) {
+                            match = s;
+                            break;
+                        }
+                    }
+                }
+                if (match == null && !res.getSfs().isEmpty()) {
+                    match = res.getSfs().get(res.getSfs().size() - 1);
+                }
+            }
+            cache.put(divisionId, match);
+            if (match == null) {
+                log.warn("SFS not resolved for divisionId={}", divisionId);
+            }
+            return match;
+        } catch (Exception e) {
+            log.warn("SFS lookup failed for divisionId={}: {}", divisionId, e.getMessage());
+            cache.put(divisionId, null);
+            return null;
+        }
+    }
+
+    private String branchCode(Sfs sfs) {
+        return sfs.getCodeOSB() != null ? sfs.getCodeOSB() : sfs.getCodeTB();
     }
 
     private void logFskk(String side, String registerId, GetSberIntegrationResult res) {

@@ -112,6 +112,11 @@ public class TurnDocdataDraft {
 
     private LocalDateTime sysLastChangeDate;
 
+    /** Код подразделения банка плательщика (SFS.codeOSB / codeTB). Для BrnchId/Id в pacs.008. */
+    private String dtBranchCode;
+    /** Код подразделения банка получателя (SFS.codeOSB / codeTB). Для BrnchId/Id в pacs.008. */
+    private String ktBranchCode;
+
     /** Сформированный XML pacs.008.001.08 для отправки в PGW. */
     private String pacs008Xml;
 }

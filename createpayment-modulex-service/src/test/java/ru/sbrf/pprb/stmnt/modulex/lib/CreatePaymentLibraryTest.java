@@ -137,6 +137,37 @@ class CreatePaymentLibraryTest {
     }
 
     @Test
+    void sfsFillsBranchCodeAndCcDivisionId() {
+        mockSber(REG_DT, UCP_DT, "acc-dt", "044525225", "corr-dt", "DT", "i", "k",
+                "38903801697", "9038", "38");
+        mockSber(REG_KT, UCP_KT, "acc-kt", "044030702", "corr-kt", "KT", "i", "k",
+                "38903801679", "9039", "38");
+
+        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
+                .getResults().get(0).getTurnDocdata();
+
+        assertThat(d.getCcDivisionId()).isEqualTo("38903801697");
+        assertThat(d.getDtBranchCode()).isEqualTo("9038");
+        assertThat(d.getKtBranchCode()).isEqualTo("9039");
+        assertThat(d.getPacs008Xml()).contains("<BrnchId><Id>9038</Id></BrnchId>");
+        assertThat(d.getPacs008Xml()).contains("<BrnchId><Id>9039</Id></BrnchId>");
+    }
+
+    @Test
+    void sfsFallsBackToCodeTbWhenCodeOsbMissing() {
+        mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "DT", "i", "k",
+                "38", null, "38");
+        mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "KT", "i", "k",
+                "38", null, "38");
+
+        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
+                .getResults().get(0).getTurnDocdata();
+
+        assertThat(d.getDtBranchCode()).isEqualTo("38");
+        assertThat(d.getKtBranchCode()).isEqualTo("38");
+    }
+
+    @Test
     void bankCorrAccFromDirectoryUsedAsFallback() {
         GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
         fskk.setAccNum("acc");
@@ -365,11 +396,19 @@ class CreatePaymentLibraryTest {
     private void mockSber(String registerId, String ucpId,
                           String accNum, String bic, String corrAcc,
                           String orgName, String inn, String kpp) {
+        mockSber(registerId, ucpId, accNum, bic, corrAcc, orgName, inn, kpp, null, null, null);
+    }
+
+    private void mockSber(String registerId, String ucpId,
+                          String accNum, String bic, String corrAcc,
+                          String orgName, String inn, String kpp,
+                          String divisionId, String codeOSB, String codeTB) {
         GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
         fskk.setAccNum(accNum);
         fskk.setAccBic(bic);
         fskk.setAccBankCorrAcc(corrAcc);
         fskk.setUcpId(ucpId);
+        fskk.setDivisionId(divisionId);
         GetSberIntegrationResult byReg = new GetSberIntegrationResult();
         byReg.setFskk(fskk);
         when(sberClient.getByRegisterId(eq(registerId), anyString())).thenReturn(byReg);
@@ -381,6 +420,18 @@ class CreatePaymentLibraryTest {
         GetSberIntegrationResult byUcp = new GetSberIntegrationResult();
         byUcp.setEpk(List.of(epk));
         when(sberClient.getByUcpId(eq(ucpId), anyString())).thenReturn(byUcp);
+
+        if (divisionId != null) {
+            GetSberIntegrationResult.Sfs sfs = new GetSberIntegrationResult.Sfs();
+            sfs.setDivisionId(divisionId);
+            sfs.setCodeOSB(codeOSB);
+            sfs.setCodeTB(codeTB);
+            GetSberIntegrationResult byDiv = new GetSberIntegrationResult();
+            byDiv.setSfs(List.of(sfs));
+            // lenient — в кейсе общего divisionId DT+KT кеш сделает только 1 вызов,
+            // второй stub переопределит первый и без lenient Mockito бы ругнулся.
+            lenient().when(sberClient.getByDivisionId(eq(divisionId), anyString())).thenReturn(byDiv);
+        }
     }
 
     private CreatePayment baseRequest(String registerDt, String registerKt, BigDecimal sum) {

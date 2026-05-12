@@ -100,10 +100,10 @@ public class Pacs008Builder {
 
         appendParty(doc, tx, "Dbtr", d.getCcDTName(), d.getCcDTINN());
         appendAcct(doc, tx, "DbtrAcct", d.getCcDTAcc());
-        appendAgent(doc, tx, "DbtrAgt", d.getCcDTBIC(), d.getCcDTNameBank());
+        appendAgent(doc, tx, "DbtrAgt", d.getCcDTBIC(), d.getCcDTNameBank(), d.getDtBranchCode());
         appendAcct(doc, tx, "DbtrAgtAcct", d.getCcDTBankCorrAcc());
 
-        appendAgent(doc, tx, "CdtrAgt", d.getCcKTBIC(), d.getCcKTNameBank());
+        appendAgent(doc, tx, "CdtrAgt", d.getCcKTBIC(), d.getCcKTNameBank(), d.getKtBranchCode());
         appendAcct(doc, tx, "CdtrAgtAcct", d.getCcKTBankCorrAcc());
         appendParty(doc, tx, "Cdtr", d.getCcKTName(), d.getCcKTINN());
         appendAcct(doc, tx, "CdtrAcct", d.getCcKTAcc());
@@ -140,7 +140,8 @@ public class Pacs008Builder {
         text(doc, schmeNm, "Cd", "BBAN");
     }
 
-    private void appendAgent(Document doc, Element parent, String role, String bic, String bankName) {
+    private void appendAgent(Document doc, Element parent, String role,
+                             String bic, String bankName, String branchCode) {
         Element agt = elem(doc, parent, role);
         Element finInst = elem(doc, agt, "FinInstnId");
         if (bic != null && !bic.isBlank()) {
@@ -152,6 +153,10 @@ public class Pacs008Builder {
         if (bankName != null && !bankName.isBlank()) {
             text(doc, finInst, "Nm", bankName.length() > NAME_MAX
                     ? bankName.substring(0, NAME_MAX) : bankName);
+        }
+        if (branchCode != null && !branchCode.isBlank()) {
+            Element brnchId = elem(doc, agt, "BrnchId");
+            text(doc, brnchId, "Id", branchCode);
         }
     }
 

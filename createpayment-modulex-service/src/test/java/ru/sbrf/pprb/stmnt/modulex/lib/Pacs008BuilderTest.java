@@ -188,6 +188,28 @@ class Pacs008BuilderTest {
     }
 
     @Test
+    void brnchIdAppearsWhenBranchCodeProvided() {
+        TurnDocdataDraft d = sampleDraft();
+        d.setDtBranchCode("9038");
+        d.setKtBranchCode("9039");
+
+        String xml = builder.build(d);
+
+        assertThat(xml).contains("<DbtrAgt>");
+        assertThat(xml).contains("<BrnchId><Id>9038</Id></BrnchId>");
+        assertThat(xml).contains("<BrnchId><Id>9039</Id></BrnchId>");
+    }
+
+    @Test
+    void brnchIdOmittedWhenBranchCodeNull() {
+        TurnDocdataDraft d = sampleDraft();
+
+        String xml = builder.build(d);
+
+        assertThat(xml).doesNotContain("<BrnchId>");
+    }
+
+    @Test
     void creDtTmIncludesGmtPlus3Offset() {
         TurnDocdataDraft d = sampleDraft();
 
