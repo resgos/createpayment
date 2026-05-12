@@ -14,12 +14,14 @@ import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult.Status;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult;
+import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.Participant;
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,6 +62,9 @@ class CreatePaymentLibraryTest {
         lenient().when(idGenerator.transactionId()).thenReturn(GEN_TX_ID);
         lenient().when(idGenerator.rqUId()).thenReturn(GEN_RQ_UID);
         lenient().when(idGenerator.docNum()).thenReturn(GEN_DOC_NUM);
+
+        // По умолчанию справочник банков пустой — отдельные тесты переопределяют.
+        lenient().when(sberClient.getBicDirectory(anyString())).thenReturn(emptyDirectoryResult());
     }
 
     @Test
@@ -93,7 +98,9 @@ class CreatePaymentLibraryTest {
         assertThat(d.getCcDTINN()).isEqualTo("7707083893");
         assertThat(d.getCcDTKPP()).isEqualTo("773601001");
         assertThat(d.getCcDTRegisterId()).isEqualTo(REG_DT);
-        assertThat(d.getCcDTNameBank()).as("ccDTNameBank пока не заполняется").isNull();
+        assertThat(d.getCcDTNameBank())
+                .as("ccDTNameBank остаётся null, если BIC не нашёлся в справочнике")
+                .isNull();
 
         assertThat(d.getCcKTAcc()).isEqualTo("40700222200000000002");
         assertThat(d.getCcKTBIC()).isEqualTo("044030702");
@@ -102,7 +109,66 @@ class CreatePaymentLibraryTest {
         assertThat(d.getCcKTINN()).isEqualTo("7800123456");
         assertThat(d.getCcKTKPP()).isEqualTo("780001001");
         assertThat(d.getCcKTRegisterId()).isEqualTo(REG_KT);
-        assertThat(d.getCcKTNameBank()).as("ccKTNameBank пока не заполняется").isNull();
+        assertThat(d.getCcKTNameBank())
+                .as("ccKTNameBank остаётся null, если BIC не нашёлся в справочнике")
+                .isNull();
+    }
+
+    @Test
+    void bankNamesFilledFromBicDirectory() {
+        mockSber(REG_DT, UCP_DT, "40700111100000000001", "044525225", "30101810400000000225",
+                "ООО Плательщик", "7707083893", "773601001");
+        mockSber(REG_KT, UCP_KT, "40700222200000000002", "044030702", "30101810500000000653",
+                "ООО Получатель", "7800123456", "780001001");
+
+        when(sberClient.getBicDirectory(anyString())).thenReturn(directoryResult(Map.of(
+                "044525225", "ПАО Сбербанк",
+                "044030702", "АО Банк ПОЛУЧАТЕЛЬ"
+        )));
+
+        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
+                .getResults().get(0).getTurnDocdata();
+
+        assertThat(d.getCcDTNameBank()).isEqualTo("ПАО Сбербанк");
+        assertThat(d.getCcKTNameBank()).isEqualTo("АО Банк ПОЛУЧАТЕЛЬ");
+        assertThat(d.getCcContrNameBank())
+                .as("ccContrNameBank должен прийти из KT")
+                .isEqualTo("АО Банк ПОЛУЧАТЕЛЬ");
+    }
+
+    @Test
+    void bankCorrAccFromDirectoryUsedAsFallback() {
+        GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
+        fskk.setAccNum("acc");
+        fskk.setAccBic("044525225");
+        fskk.setAccBankCorrAcc(null); // корсчёт не пришёл из FSKK
+        fskk.setUcpId("U-1");
+        GetSberIntegrationResult byRegister = new GetSberIntegrationResult();
+        byRegister.setFskk(fskk);
+        when(sberClient.getByRegisterId(eq(REG_DT), anyString())).thenReturn(byRegister);
+        when(sberClient.getByRegisterId(eq(REG_KT), anyString())).thenReturn(byRegister);
+        GetSberIntegrationResult.Epk epk = new GetSberIntegrationResult.Epk();
+        GetSberIntegrationResult byUcp = new GetSberIntegrationResult();
+        byUcp.setEpk(List.of(epk));
+        when(sberClient.getByUcpId(eq("U-1"), anyString())).thenReturn(byUcp);
+
+        Participant p = new Participant();
+        p.setBic("044525225");
+        p.setName("ПАО Сбербанк");
+        p.setCorrespondentAcc("30101810400000000225");
+        GetSberIntegrationResult dir = new GetSberIntegrationResult();
+        GetSberIntegrationResult.Nsi nsi = new GetSberIntegrationResult.Nsi();
+        nsi.setBicDirectory(true);
+        nsi.setParticipant(List.of(p));
+        dir.setNsi(nsi);
+        when(sberClient.getBicDirectory(anyString())).thenReturn(dir);
+
+        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
+                .getResults().get(0).getTurnDocdata();
+
+        assertThat(d.getCcDTBankCorrAcc())
+                .as("если FSKK не отдал корсчёт, берём из справочника")
+                .isEqualTo("30101810400000000225");
     }
 
     @Test
@@ -172,7 +238,9 @@ class CreatePaymentLibraryTest {
         assertThat(d.getCcContrBIC()).isEqualTo("bic-kt");
         assertThat(d.getCcContrBankCorrAcc()).isEqualTo("corr-kt");
         assertThat(d.getCcContrRegisterId()).isEqualTo(REG_KT);
-        assertThat(d.getCcContrNameBank()).as("банк-контрагент пока не заполняется").isNull();
+        assertThat(d.getCcContrNameBank())
+                .as("без справочника банк-контрагент null")
+                .isNull();
     }
 
     @Test
@@ -322,6 +390,32 @@ class CreatePaymentLibraryTest {
                 .version("1.0")
                 .walletTurns(List.of(baseWalletTurn(registerDt, registerKt, sum)))
                 .build();
+    }
+
+    private GetSberIntegrationResult emptyDirectoryResult() {
+        GetSberIntegrationResult res = new GetSberIntegrationResult();
+        GetSberIntegrationResult.Nsi nsi = new GetSberIntegrationResult.Nsi();
+        nsi.setBicDirectory(true);
+        nsi.setParticipant(List.of());
+        res.setNsi(nsi);
+        return res;
+    }
+
+    private GetSberIntegrationResult directoryResult(Map<String, String> bicToName) {
+        java.util.List<Participant> ps = new java.util.ArrayList<>();
+        bicToName.forEach((bic, name) -> {
+            Participant p = new Participant();
+            p.setBic(bic);
+            p.setName(name);
+            p.setCorrespondentAcc("30101810000000000" + bic.substring(Math.max(0, bic.length() - 3)));
+            ps.add(p);
+        });
+        GetSberIntegrationResult res = new GetSberIntegrationResult();
+        GetSberIntegrationResult.Nsi nsi = new GetSberIntegrationResult.Nsi();
+        nsi.setBicDirectory(true);
+        nsi.setParticipant(ps);
+        res.setNsi(nsi);
+        return res;
     }
 
     private WalletTurnInput baseWalletTurn(String registerDt, String registerKt, BigDecimal sum) {

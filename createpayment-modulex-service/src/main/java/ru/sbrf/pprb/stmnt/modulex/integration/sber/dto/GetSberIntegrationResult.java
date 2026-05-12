@@ -82,7 +82,18 @@ public class GetSberIntegrationResult {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Nsi {
         private boolean bicDirectory;
+        private List<Participant> participant;
         private int statusCode;
         private String statusDesc;
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Participant {
+        @JsonProperty("BIC")
+        private String bic;
+        private String name;
+        private String correspondentAcc;
+        private String originatorUID;
     }
 }

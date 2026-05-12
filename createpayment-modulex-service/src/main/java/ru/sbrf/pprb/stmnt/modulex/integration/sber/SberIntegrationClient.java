@@ -9,4 +9,7 @@ public interface SberIntegrationClient {
     GetSberIntegrationResult getByUcpId(String ucpId, String rqUID);
 
     GetSberIntegrationResult getByDivisionId(String divisionId, String rqUID);
+
+    /** Запрос справочника банков (NSI.bicDirectory=true). */
+    GetSberIntegrationResult getBicDirectory(String rqUID);
 }

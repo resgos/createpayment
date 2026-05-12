@@ -78,6 +78,18 @@ public class SberIntegrationClientImpl implements SberIntegrationClient {
         return call(body);
     }
 
+    @Override
+    public GetSberIntegrationResult getBicDirectory(String rqUID) {
+        log.debug("Sber getSberIntegration bicDirectory=true");
+        GetSberIntegrationBody body = GetSberIntegrationBody.builder()
+                .rqTm(java.time.LocalDateTime.now())
+                .rqUID(rqUID)
+                .version(properties.getVersion())
+                .nsi(Nsi.builder().bicDirectory(true).build())
+                .build();
+        return call(body);
+    }
+
     private GetSberIntegrationBody.GetSberIntegrationBodyBuilder baseBody(String rqUID) {
         return GetSberIntegrationBody.builder()
                 .rqTm(LocalDateTime.now())
