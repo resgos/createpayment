@@ -16,6 +16,7 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
 import org.springframework.web.client.RestTemplate;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
+import ru.sbrf.pprb.stmnt.modulex.lib.Pacs008Builder;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataIdGenerator;
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
@@ -71,7 +72,8 @@ public class AppConfig {
     @Bean
     public CreatePaymentLibrary createPaymentLibrary(SimpleValidator simpleValidator,
                                                      SberIntegrationClient sberIntegrationClient,
-                                                     TurnDocdataIdGenerator idGenerator) {
-        return new CreatePaymentLibrary(simpleValidator, sberIntegrationClient, idGenerator);
+                                                     TurnDocdataIdGenerator idGenerator,
+                                                     Pacs008Builder pacs008Builder) {
+        return new CreatePaymentLibrary(simpleValidator, sberIntegrationClient, idGenerator, pacs008Builder);
     }
 }

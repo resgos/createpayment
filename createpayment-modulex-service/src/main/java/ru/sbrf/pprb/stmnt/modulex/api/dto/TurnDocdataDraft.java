@@ -111,4 +111,7 @@ public class TurnDocdataDraft {
     private String ccDocTypeCode;
 
     private LocalDateTime sysLastChangeDate;
+
+    /** Сформированный XML pacs.008.001.08 для отправки в PGW. */
+    private String pacs008Xml;
 }

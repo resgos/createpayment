@@ -56,7 +56,7 @@ class CreatePaymentLibraryTest {
     @BeforeEach
     void setUp() {
         SimpleValidator validator = new SimpleValidator();
-        library = new CreatePaymentLibrary(validator, sberClient, idGenerator);
+        library = new CreatePaymentLibrary(validator, sberClient, idGenerator, new Pacs008Builder());
 
         lenient().when(idGenerator.operationId()).thenReturn(GEN_OPERATION_ID);
         lenient().when(idGenerator.transactionId()).thenReturn(GEN_TX_ID);

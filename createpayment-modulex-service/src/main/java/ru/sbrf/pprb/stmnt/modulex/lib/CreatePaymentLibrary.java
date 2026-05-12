@@ -26,13 +26,16 @@ public class CreatePaymentLibrary {
     private final SimpleValidator simpleValidator;
     private final SberIntegrationClient sberClient;
     private final TurnDocdataIdGenerator idGenerator;
+    private final Pacs008Builder pacs008Builder;
 
     public CreatePaymentLibrary(SimpleValidator simpleValidator,
                                 SberIntegrationClient sberClient,
-                                TurnDocdataIdGenerator idGenerator) {
+                                TurnDocdataIdGenerator idGenerator,
+                                Pacs008Builder pacs008Builder) {
         this.simpleValidator = simpleValidator;
         this.sberClient = sberClient;
         this.idGenerator = idGenerator;
+        this.pacs008Builder = pacs008Builder;
     }
 
     public CreatePaymentResponse execute(CreatePayment request) {
@@ -133,6 +136,13 @@ public class CreatePaymentLibrary {
             TurnDocdataDraft draft = b.build();
             applyBicDirectory(draft, bicDirectory);
             applyContraFromKt(draft);
+
+            try {
+                draft.setPacs008Xml(pacs008Builder.build(draft));
+            } catch (Exception e) {
+                log.warn("Pacs008 build failed for ccOperationId={}: {}",
+                        draft.getCcOperationId(), e.getMessage());
+            }
 
             return rb.status(Status.DRAFT_CREATED).statusDesc("OK").turnDocdata(draft).build();
         } catch (Exception e) {
