@@ -17,16 +17,22 @@ import sbp.sbt.sdk.exception.SdkJsonRpcClientException;
 /**
  * Реальная DataSpace-имплементация {@link StatusWalletTurnRepository}.
  *
- * <p>Upsert по уник-ключу {@code (ccWalletTurnObjectId, ccStatus)}:</p>
+ * <p>Текущий {@code modulex-model-sdk} ещё генерирует поле как {@code ccWalletTurnId}
+ * (старое имя). В новом {@code modulex.xml} оно переименовано в
+ * {@code ccWalletTurnObjectId} — после регенерации SDK поменяй
+ * {@code setCcWalletTurnId} → {@code setCcWalletTurnObjectId} и
+ * {@code ccWalletTurnIdEq} → {@code ccWalletTurnObjectIdEq}.</p>
+ *
+ * <p>Upsert по уник-ключу:</p>
  * <ol>
- *   <li>{@code dsApi.searchStatusWalletTurn(g -> g.setWhere(w -> w.ccWalletTurnObjectIdEq(...).and(w.ccStatusEq(...))).withObjectId())};</li>
- *   <li>если запись есть — {@code packet.statusWalletTurn.update(StatusWalletTurnRef.of(objectId), updateParam)};</li>
+ *   <li>search по паре (id + status);</li>
+ *   <li>если запись есть — {@code packet.statusWalletTurn.update(Ref.of(objectId), updateParam)};</li>
  *   <li>если нет — {@code packet.statusWalletTurn.create(createParam)};</li>
  *   <li>{@code dsApi.execute(packet)}.</li>
  * </ol>
  *
- * <p>Альтернатива (если SDK подсунет ключ-enum) — одной операцией
- * {@code packet.statusWalletTurn.updateOrCreate(param, KeyStatusWalletTurn.CC_WALLET_TURN_OBJECT_ID_AND_CC_STATUS)}.</p>
+ * <p>{@code objectId} проектируется в Get автоматически — явный
+ * {@code .withObjectId()} в SDK отсутствует.</p>
  */
 @Slf4j
 @Primary
@@ -60,7 +66,9 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
                         existingId, u.getCcWalletTurnObjectId(), u.getCcStatus());
             } else {
                 packet.statusWalletTurn.create(CreateStatusWalletTurnParam.create()
-                        .setCcWalletTurnObjectId(u.getCcWalletTurnObjectId())
+                        // SDK ещё использует старое имя ccWalletTurnId — value кладём из
+                        // нашего ccWalletTurnObjectId (это один и тот же external bch payment id).
+                        .setCcWalletTurnId(u.getCcWalletTurnObjectId())
                         .setCcOperationId(u.getCcOperationId())
                         .setCcTransactionId(u.getCcTransactionId())
                         .setCcStatus(u.getCcStatus())
@@ -79,9 +87,9 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
     }
 
     private String findObjectId(String walletTurnObjectId, String status) throws SdkJsonRpcClientException {
+        // SDK имя поля — ccWalletTurnId; objectId проектируется автоматически.
         GraphCollection<StatusWalletTurnGet> coll = dsApi.searchStatusWalletTurn(g -> g
-                .setWhere(w -> w.ccWalletTurnObjectIdEq(walletTurnObjectId).and(w.ccStatusEq(status)))
-                .withObjectId());
+                .setWhere(w -> w.ccWalletTurnIdEq(walletTurnObjectId).and(w.ccStatusEq(status))));
         return coll.stream().findFirst().map(StatusWalletTurnGet::getObjectId).orElse(null);
     }
 }
