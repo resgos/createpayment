@@ -1,7 +1,6 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 
 import java.util.Map;
@@ -10,11 +9,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory мок DataSpace для {@code turn_docdata}.
- * Ключ — {@code ccOperationId}. Подключи реальную DataSpace-имплементацию через
- * свой {@code @Component @Primary} — она вытеснит этот fallback.
+ * Ключ — {@code ccOperationId}. Регистрируется как {@code @Bean} в {@code AppConfig}.
  */
 @Slf4j
-@Component
 public class InMemoryTurnDocdataRepository implements TurnDocdataRepository {
 
     private final Map<String, TurnDocdataDraft> store = new ConcurrentHashMap<>();

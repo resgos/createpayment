@@ -438,16 +438,32 @@ mvn -f _test-runner/pom.xml test
 
 ## Подключение реального DataSpace
 
-In-memory моки лежат рядом ([InMemoryWalletTurnRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/InMemoryWalletTurnRepository.java),
-[InMemoryTurnDocdataRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/InMemoryTurnDocdataRepository.java),
-[InMemoryStatusWalletTurnRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/InMemoryStatusWalletTurnRepository.java))
-и регистрируются как обычные `@Component`. Они работают пока нет реальной имплементации.
+Реальные имплементации лежат в [`lib/dataspace/`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/):
 
-### Шаги для подключения настоящего DataSpace
+| Класс | Что делает |
+|---|---|
+| [DataSpaceWalletTurnRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceWalletTurnRepository.java) | `findByBchOperationId` → `dsApi.searchWalletTurn` |
+| [DataSpaceTurnDocdataRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceTurnDocdataRepository.java) | `save` → `Packet.turnDocdata.create + dsApi.execute(packet)`; `findByOperationId` → `searchTurnDocdata` |
+| [DataSpaceStatusWalletTurnRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceStatusWalletTurnRepository.java) | `upsertStatus` → search по `(ccWalletTurnObjectId, ccStatus)`, затем `create` либо `update` |
 
-Корп. jar `ru.sbrf.pprb.stmnt.services:dataspacemodulex` уже содержит
-`DataSpaceApi` (по примеру `DataSpaceApiImpl`, который ты показывал).
-Добавь по `@Component @Primary` для каждой нашей интерфейс-абстракции:
+Все три помечены `@Primary @Component` и автоматически вытесняют
+in-memory fallback-ы из [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java).
+
+Зависимость — `DataSpaceApi` из corp `simpleservicemodulex` (бин уже
+предоставлен этим артефактом, ничего отдельно конфигурить не нужно
+кроме [`dataspace.url`](#-ключевые-url--env-переменные)).
+
+### Локальная сборка
+
+В `_test-runner` и `_local-run` (Maven Central) пакет `lib/dataspace/`
+**исключён из компиляции** через `maven-compiler-plugin <excludes>` —
+эти классы требуют corp stmnt-model-sdk и DataSpaceApi, которых
+в Maven Central нет. На корп. сборке (через основной `pom.xml`)
+всё компилируется нормально.
+
+### Если нужно править — пример типового класса
+
+Шаблон оставлен только для справки. Реальные файлы — в `lib/dataspace/`.
 
 ```java
 @Primary
@@ -584,12 +600,13 @@ Spring Boot 3.5 — может не зарегистрировать бин да
 - `ccDivisionId` резолвится из `FSKK_DT.divisionId`; `ccReceiptDate` ставится `now()` на приёме `execute`.
 - Индексы `WalletTurn` в [model/modulex.xml](createpayment-modulex-service/src/main/resources/model/modulex.xml) синхронизированы с актуальным DDL: уникальность по `(ccBchOperationId, ccContractId)`, обычный индекс по `ccTxId`.
 - `ResultCallbackClientImpl` self-contained: собирает собственный `RestTemplate` через `RestTemplateBuilder` — устранена ошибка wiring при stale-сборке.
-- In-memory репозитории перешли с `@ConditionalOnMissingBean` на plain `@Component` — Spring Boot 3.5 не всегда регистрировал условный бин при отсутствии других кандидатов. Подключение реального DataSpace теперь через `@Primary` (см. секцию выше).
+- In-memory репозитории зарегистрированы явными `@Bean` методами в [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java) — bulletproof в любой корп. ComponentScan конфигурации. Сами классы остались plain POJO без Spring-аннотаций.
+- Реальные DataSpace-имплементации трёх репозиториев лежат в [`lib/dataspace/`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/), помечены `@Primary @Component` и вытесняют in-memory fallback автоматически. Из `_test-runner`/`_local-run` они исключены через `maven-compiler-plugin <excludes>`.
 - Конфиг переведён на env-var pattern (`${VAR:default}`) для всех URL. Добавлен профиль [`application-prod.yml`](createpayment-modulex-service/src/main/resources/application-prod.yml) (fail-fast при отсутствии prod-URL) и шаблон [`.env.prod.example`](createpayment-modulex-service/.env.prod.example).
 
 Что осталось 🔜:
 
-- **Реальная DataSpace-имплементация** трёх репозиториев — через `DataSpaceApi` (`searchRegisterWallet`, `execute(Packet)` и т.д.). Подключается одним `@Component` на каждый репозиторий; in-memory моки автоматически отступят.
+- **Прогнать реальные DataSpace-имплементации** (уже написаны в [`lib/dataspace/`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/)) против corp DataSpace и при необходимости довести точную сигнатуру graph-DSL до соответствия `stmnt-model-sdk` твоей версии.
 - **Конвертация валют**: сейчас `ccValuta*` всегда `810`. Подключить к `FSKK.accCurrency`.
 - **Курсы ЦБ**: `ccRateDT/KT` сейчас `1`. Нужен сервис курсов.
 - **`ccStartSum / ccStartSumNAT`**: считать для операций типа `ccTypeOper=50`.

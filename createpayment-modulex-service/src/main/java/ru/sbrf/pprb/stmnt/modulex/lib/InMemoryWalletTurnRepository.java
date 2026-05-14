@@ -1,7 +1,6 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
 
 import java.util.Map;
@@ -10,14 +9,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory мок DataSpace для {@code WalletTurn}.
- * Можно предварительно засеивать через {@link #put(WalletTurn)} (полезно в тестах
- * и локальном запуске). По умолчанию таблица пустая.
- *
- * <p>Подключи реальную DataSpace-имплементацию через свой {@code @Component @Primary} —
- * она вытеснит этот fallback.</p>
+ * Регистрируется как {@code @Bean} в {@code AppConfig}.
+ * Можно засеивать через {@link #put(WalletTurn)}.
  */
 @Slf4j
-@Component
 public class InMemoryWalletTurnRepository implements WalletTurnRepository {
 
     private final Map<String, WalletTurn> store = new ConcurrentHashMap<>();

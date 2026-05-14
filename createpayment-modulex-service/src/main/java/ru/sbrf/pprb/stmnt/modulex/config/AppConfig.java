@@ -17,6 +17,9 @@ import org.springframework.web.client.RestTemplate;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
+import ru.sbrf.pprb.stmnt.modulex.lib.InMemoryStatusWalletTurnRepository;
+import ru.sbrf.pprb.stmnt.modulex.lib.InMemoryTurnDocdataRepository;
+import ru.sbrf.pprb.stmnt.modulex.lib.InMemoryWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.Pacs008Builder;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataIdGenerator;
@@ -93,6 +96,26 @@ public class AppConfig {
         }
         rt.getMessageConverters().add(0, jsonConverter);
         return rt;
+    }
+
+    /**
+     * In-memory fallback-репозитории.
+     * Реальная DataSpace-имплементация подключается своим {@code @Component @Primary}
+     * (см. секцию "Подключение реального DataSpace" в README).
+     */
+    @Bean
+    public WalletTurnRepository walletTurnRepository() {
+        return new InMemoryWalletTurnRepository();
+    }
+
+    @Bean
+    public TurnDocdataRepository turnDocdataRepository() {
+        return new InMemoryTurnDocdataRepository();
+    }
+
+    @Bean
+    public StatusWalletTurnRepository statusWalletTurnRepository() {
+        return new InMemoryStatusWalletTurnRepository();
     }
 
     @Bean

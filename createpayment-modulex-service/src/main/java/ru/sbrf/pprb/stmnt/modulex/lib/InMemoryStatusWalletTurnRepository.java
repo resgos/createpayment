@@ -1,7 +1,6 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.util.Collection;
 import java.util.Map;
@@ -12,12 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * Уник-ключ {@code (ccWalletTurnObjectId, ccStatus)} — повторный upsert
  * с теми же ключами просто перезаписывает запись.
  *
- * <p>Подключи реальную DataSpace-имплементацию через свой {@code @Component @Primary} —
- * она вытеснит этот fallback. {@code @ConditionalOnMissingBean} на @Component работает
- * нестабильно в Spring Boot 3.5, поэтому используем явный {@code @Primary} вместо него.</p>
+ * <p>Регистрируется как {@code @Bean} в {@link ru.sbrf.pprb.stmnt.modulex.config.AppConfig} —
+ * не @Component, чтобы избежать "tap dance" со Spring conditional-ами и corp ComponentScan.
+ * Реальная DataSpace-имплементация подключается своим {@code @Component @Primary} (см. README).</p>
  */
 @Slf4j
-@Component
 public class InMemoryStatusWalletTurnRepository implements StatusWalletTurnRepository {
 
     private final Map<String, StatusWalletTurnUpdate> store = new ConcurrentHashMap<>();
