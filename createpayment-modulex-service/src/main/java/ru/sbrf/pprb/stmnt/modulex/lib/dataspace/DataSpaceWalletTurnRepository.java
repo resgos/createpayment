@@ -1,33 +1,30 @@
 package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
+import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
+import ru.sbrf.pprb.stmnt.modulex.graph.get.WalletTurnGet;
 import ru.sbrf.pprb.stmnt.modulex.lib.WalletTurnRepository;
 import ru.sbrf.pprb.stmnt.services.simple.dataspacemodulex.DataSpaceApi;
+import sbp.sbt.sdk.exception.SdkJsonRpcClientException;
 
 import java.util.Optional;
 
 /**
- * Шаблон DataSpace-имплементации {@link WalletTurnRepository}.
+ * Реальная DataSpace-имплементация {@link WalletTurnRepository}.
  *
- * <p><b>Этот класс не активен.</b> {@code @Primary} снят сознательно — пока
- * заглушка кидает {@link UnsupportedOperationException}, в DI побеждает
- * in-memory bean из {@code AppConfig}.</p>
+ * <p>DSL соответствует <a href="https://habr.com/ru/companies/sberbank/articles/662397/">
+ * публичной документации Platform V DataSpace SDK</a>: фильтр через
+ * {@code .setWhere(w -> w.ccXxxEq(value))}, проекция через {@code .withCcXxx()}.</p>
  *
- * <p>Что нужно сделать:</p>
- * <ol>
- *   <li>Регенерировать {@code stmnt-model-sdk} (или {@code modulex-model-sdk})
- *       из актуального {@code modulex.xml} — чтобы появились getter'ы новых
- *       полей ({@code getCcBchOperationId}, {@code getCcTxId},
- *       {@code getCcOwnerDt/Kt} и т.д.).</li>
- *   <li>Реализовать {@link #findByBchOperationId(String)} через
- *       {@code dsApi.searchWalletTurn(g -> g.ccBchOperationId().equal(...))}
- *       — точная сигнатура graph-DSL зависит от версии SDK.</li>
- *   <li>Поставить обратно {@code @Primary}.</li>
- * </ol>
+ * <p>Требуется регенерация {@code modulex-model-sdk} из актуального
+ * {@code modulex.xml} — getter'ы новых полей ({@code getCcBchOperationId}
+ * и т.п.) появятся только после этого.</p>
  */
 @Slf4j
+@Primary
 @Component
 public class DataSpaceWalletTurnRepository implements WalletTurnRepository {
 
@@ -39,9 +36,58 @@ public class DataSpaceWalletTurnRepository implements WalletTurnRepository {
 
     @Override
     public Optional<WalletTurn> findByBchOperationId(String ccBchOperationId) {
-        throw new UnsupportedOperationException(
-                "DataSpaceWalletTurnRepository не реализован для текущей версии "
-                        + "stmnt-model-sdk. Регенерируй SDK из modulex.xml и подставь точный "
-                        + "graph-DSL — структура остаётся та же, что в комментарии класса.");
+        if (ccBchOperationId == null || ccBchOperationId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            GraphCollection<WalletTurnGet> coll = dsApi.searchWalletTurn(g -> g
+                    .setWhere(w -> w.ccBchOperationIdEq(ccBchOperationId))
+                    .withCcDate()
+                    .withCcBchOperationId()
+                    .withCcTxId()
+                    .withCcBlockNumber()
+                    .withCcContractId()
+                    .withCcOwnerDt()
+                    .withCcRegisterDt()
+                    .withCcOwnerKt()
+                    .withCcRegisterKt()
+                    .withCcSum()
+                    .withCcDateDoc()
+                    .withCcPurpose()
+                    .withCcOperationId()
+                    .withCcTransactionId()
+                    .withCcRqTm()
+                    .withCcRqUId()
+                    .withCcSignature()
+                    .withSysLastChangeDate());
+            return coll.stream().findFirst().map(this::map);
+        } catch (SdkJsonRpcClientException e) {
+            log.error("WalletTurn lookup failed for ccBchOperationId={}: {}",
+                    ccBchOperationId, e.getMessage(), e);
+            throw new IllegalStateException("WalletTurn lookup failed", e);
+        }
+    }
+
+    private WalletTurn map(WalletTurnGet g) {
+        return WalletTurn.builder()
+                .ccDate(g.getCcDate())
+                .ccBchOperationId(g.getCcBchOperationId())
+                .ccTxId(g.getCcTxId())
+                .ccBlockNumber(g.getCcBlockNumber())
+                .ccContractId(g.getCcContractId())
+                .ccOwnerDt(g.getCcOwnerDt())
+                .ccRegisterDt(g.getCcRegisterDt())
+                .ccOwnerKt(g.getCcOwnerKt())
+                .ccRegisterKt(g.getCcRegisterKt())
+                .ccSum(g.getCcSum())
+                .ccDateDoc(g.getCcDateDoc())
+                .ccPurpose(g.getCcPurpose())
+                .ccOperationId(g.getCcOperationId())
+                .ccTransactionId(g.getCcTransactionId())
+                .ccRqTm(g.getCcRqTm())
+                .ccRqUId(g.getCcRqUId())
+                .ccSignature(g.getCcSignature())
+                .sysLastChangeDate(g.getSysLastChangeDate())
+                .build();
     }
 }

@@ -602,6 +602,7 @@ Spring Boot 3.5 — может не зарегистрировать бин да
 - `ResultCallbackClientImpl` self-contained: собирает собственный `RestTemplate` через `RestTemplateBuilder` — устранена ошибка wiring при stale-сборке.
 - In-memory репозитории зарегистрированы явными `@Bean` методами в [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java) — bulletproof в любой корп. ComponentScan конфигурации. Сами классы остались plain POJO без Spring-аннотаций.
 - Реальные DataSpace-имплементации трёх репозиториев лежат в [`lib/dataspace/`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/), помечены `@Primary @Component` и вытесняют in-memory fallback автоматически. Из `_test-runner`/`_local-run` они исключены через `maven-compiler-plugin <excludes>`.
+- DSL Platform V DataSpace SDK: фильтр `.setWhere(w -> w.ccXxxEq(...))`, проекция `.withCcXxx()`, обновление `entity.update(EntityRef.of(id), updateParam)`. Конвертация `LocalDateTime → java.util.Date` для `ccRqTm` (тип в SDK — `Date`).
 - Конфиг переведён на env-var pattern (`${VAR:default}`) для всех URL. Добавлен профиль [`application-prod.yml`](createpayment-modulex-service/src/main/resources/application-prod.yml) (fail-fast при отсутствии prod-URL) и шаблон [`.env.prod.example`](createpayment-modulex-service/.env.prod.example).
 
 Что осталось 🔜:
