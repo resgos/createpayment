@@ -15,8 +15,8 @@ public class LoggingStatusWalletTurnRepository implements StatusWalletTurnReposi
 
     @Override
     public void upsertStatus(StatusWalletTurnUpdate u) {
-        log.info("status_WalletTurn upsert (placeholder): operationId={}, status={}, code={}, desc={}, rqUID={}, idempotencyKey={}",
-                u.getCcOperationId(), u.getCcStatus(), u.getCcStatusCode(),
-                u.getCcStatusDesc(), u.getCcRqUId(), u.getCcIdempotencyKey());
+        log.info("status_WalletTurn upsert (placeholder): walletTurnObjectId={}, operationId={}, transactionId={}, status={}, code={}, desc={}",
+                u.getCcWalletTurnObjectId(), u.getCcOperationId(), u.getCcTransactionId(),
+                u.getCcStatus(), u.getCcStatusCode(), u.getCcStatusDesc());
     }
 }

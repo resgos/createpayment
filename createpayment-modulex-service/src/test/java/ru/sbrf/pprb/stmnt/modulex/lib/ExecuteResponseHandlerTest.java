@@ -51,12 +51,12 @@ class ExecuteResponseHandlerTest {
         verify(repository).upsertStatus(captor.capture());
         StatusWalletTurnUpdate u = captor.getValue();
         assertThat(u.getCcOperationId()).isEqualTo(UPD_UID);
-        assertThat(u.getCcRqUId()).isEqualTo(CORR_ID);
-        assertThat(u.getCcIdempotencyKey()).isEqualTo(IDEMP_KEY);
         assertThat(u.getCcStatus()).isEqualTo("PPRB_EXECUTED");
         assertThat(u.getCcStatusCode()).isEqualTo("300");
         assertThat(u.getCcStatusDesc()).isEqualTo("Документ успешно обработан");
-        assertThat(u.getCcRqTm()).isNotNull();
+        assertThat(u.getSysLastChangeDate()).isNotNull();
+        // ccWalletTurnObjectId резолвится из walletTurn — на placeholder-репо null
+        assertThat(u.getCcWalletTurnObjectId()).isNull();
     }
 
     @Test

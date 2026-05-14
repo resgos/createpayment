@@ -8,30 +8,32 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * То, что мы хотим upsert-ить в status_WalletTurn после квитанции от PGW.
- * Поля соответствуют модели данных {@code StatusWalletTurn}.
+ * Upsert в {@code t_modulex_statuswalletturn} после квитанции PGW.
+ *
+ * <p>Унике-индекс таблицы: {@code (ccWalletTurnObjectId, ccStatus)} — на один
+ * внешний blockchain-платёж может быть несколько строк, по одной на каждый статус.</p>
+ *
+ * <p>Поле {@code ccWalletTurnObjectId} раньше называлось {@code ccBchOperationId} —
+ * переименование сделано на уровне БД.</p>
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class StatusWalletTurnUpdate {
-    /** Идентификатор оборота — для нас это updUID из квитанции = ccOperationId в нашей системе. */
+
+    /**
+     * Внешний идентификатор платежа в blockchain — берётся из связанной walletTurn по
+     * {@code ccBchOperationId} (поле walletTurn осталось со старым именем).
+     * При наличии полного DataSpace-репозитория будет резолвиться через JOIN
+     * turn_docdata → walletTurn по {@code ccOperationId}. Сейчас может быть null
+     * до подключения реальной выборки.
+     */
+    private String ccWalletTurnObjectId;
     private String ccOperationId;
-    /** transactionId (если ничего нет — пусто, заполнится при первичной вставке). */
     private String ccTransactionId;
-    /** walletTurnId — внешний. */
-    private String ccWalletTurnId;
-    /** Транспортный correlationId (= ccRqUId исходного запроса в PGW). */
-    private String ccRqUId;
-    /** Транспортный ключ идемпотентности (приходит от PGW). */
-    private String ccIdempotencyKey;
-    /** Маппинг ccStatus: PPRB_EXECUTED / PPRB_PROCESSING / PPRB_FAILED / UNKNOWN. */
     private String ccStatus;
-    /** statusInfo.code. */
     private String ccStatusCode;
-    /** statusInfo.message. */
     private String ccStatusDesc;
-    /** Время фиксации квитанции. */
-    private LocalDateTime ccRqTm;
+    private LocalDateTime sysLastChangeDate;
 }

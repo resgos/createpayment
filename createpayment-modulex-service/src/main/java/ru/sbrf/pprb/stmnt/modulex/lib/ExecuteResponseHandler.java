@@ -39,14 +39,17 @@ public class ExecuteResponseHandler {
                 correlationId, idempotencyKey, ticket.getUpdUID(), ticket.getResultStatus(), code, ccStatus);
 
         try {
+            // ccWalletTurnObjectId резолвится из связанной walletTurn по ccOperationId;
+            // на placeholder-репозитории оставляем null. correlationId/idempotencyKey
+            // в StatusWalletTurn по новой спеке не хранятся — они в turn_docdata.
             repository.upsertStatus(StatusWalletTurnUpdate.builder()
+                    .ccWalletTurnObjectId(null)
                     .ccOperationId(ticket.getUpdUID())
-                    .ccRqUId(correlationId)
-                    .ccIdempotencyKey(idempotencyKey)
+                    .ccTransactionId(null)
                     .ccStatus(ccStatus)
                     .ccStatusCode(code)
                     .ccStatusDesc(desc)
-                    .ccRqTm(LocalDateTime.now(AppConfig.ZONE_ID))
+                    .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID))
                     .build());
         } catch (Exception e) {
             log.error("Failed to persist status_WalletTurn for correlationId={}: {}", correlationId, e.getMessage(), e);
