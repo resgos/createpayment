@@ -2,7 +2,6 @@ package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
 import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.graph.get.StatusWalletTurnGet;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnRepository;
@@ -35,7 +34,6 @@ import sbp.sbt.sdk.exception.SdkJsonRpcClientException;
  * {@code .withObjectId()} в SDK отсутствует.</p>
  */
 @Slf4j
-@Primary
 @Component
 public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepository {
 

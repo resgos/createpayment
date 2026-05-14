@@ -446,8 +446,20 @@ mvn -f _test-runner/pom.xml test
 | [DataSpaceTurnDocdataRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceTurnDocdataRepository.java) | `save` → `Packet.turnDocdata.create + dsApi.execute(packet)`; `findByOperationId` → `searchTurnDocdata` |
 | [DataSpaceStatusWalletTurnRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceStatusWalletTurnRepository.java) | `upsertStatus` → search по `(ccWalletTurnObjectId, ccStatus)`, затем `create` либо `update` |
 
-Все три помечены `@Primary @Component` и автоматически вытесняют
-in-memory fallback-ы из [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java).
+Сейчас все три — **шаблоны** (без `@Primary`, тело `UnsupportedOperationException`). Активны
+in-memory bean-ы из [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java).
+
+**Почему не активны?** Текущий `modulex-model-sdk-0.0.1-6468` сгенерирован
+из **старой** версии `modulex.xml` — getter'ов/setter'ов новых полей
+(`ccBchOperationId`, `ccDate`, `ccTxId`, `ccBlockNumber`, `ccOwnerDt/Kt`,
+`ccSum`, `ccDateDoc`, `ccPurpose`, `ccSignature` в `WalletTurn`;
+`ccWalletTurnObjectId` в `StatusWalletTurn`) в SDK нет.
+
+**Чтобы активировать**: регенерируй SDK из актуального
+[`modulex.xml`](createpayment-modulex-service/src/main/resources/model/modulex.xml)
+→ раскомментируй тела (шаблон с правильным DSL `searchXxx` / `Packet`-create
+лежит в javadoc каждого класса) → поставь `@Primary` обратно. После этого
+в DI они вытеснят in-memory fallback автоматически.
 
 Зависимость — `DataSpaceApi` из corp `simpleservicemodulex` (бин уже
 предоставлен этим артефактом, ничего отдельно конфигурить не нужно
@@ -601,8 +613,8 @@ Spring Boot 3.5 — может не зарегистрировать бин да
 - Индексы `WalletTurn` в [model/modulex.xml](createpayment-modulex-service/src/main/resources/model/modulex.xml) синхронизированы с актуальным DDL: уникальность по `(ccBchOperationId, ccContractId)`, обычный индекс по `ccTxId`.
 - `ResultCallbackClientImpl` self-contained: собирает собственный `RestTemplate` через `RestTemplateBuilder` — устранена ошибка wiring при stale-сборке.
 - In-memory репозитории зарегистрированы явными `@Bean` методами в [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java) — bulletproof в любой корп. ComponentScan конфигурации. Сами классы остались plain POJO без Spring-аннотаций.
-- Реальные DataSpace-имплементации трёх репозиториев лежат в [`lib/dataspace/`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/), помечены `@Primary @Component` и вытесняют in-memory fallback автоматически. Из `_test-runner`/`_local-run` они исключены через `maven-compiler-plugin <excludes>`.
-- DSL Platform V DataSpace SDK: фильтр `.setWhere(w -> w.ccXxxEq(...))`, проекция `.withCcXxx()`, обновление `entity.update(EntityRef.of(id), updateParam)`. Конвертация `LocalDateTime → java.util.Date` для `ccRqTm` (тип в SDK — `Date`).
+- Шаблоны DataSpace-имплементаций в [`lib/dataspace/`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/) — пока неактивны (нет `@Primary`, тело `UnsupportedOperationException`). Активируются после регенерации `modulex-model-sdk` из текущего [`modulex.xml`](createpayment-modulex-service/src/main/resources/model/modulex.xml).
+- DSL Platform V DataSpace SDK (для будущей разкомментировки): фильтр `.setWhere(w -> w.ccXxxEq(...))`, проекция `.withCcXxx()`, обновление `entity.update(EntityRef.of(id), updateParam)`, конвертация `LocalDateTime → java.util.Date` для `ccRqTm`.
 - Конфиг переведён на env-var pattern (`${VAR:default}`) для всех URL. Добавлен профиль [`application-prod.yml`](createpayment-modulex-service/src/main/resources/application-prod.yml) (fail-fast при отсутствии prod-URL) и шаблон [`.env.prod.example`](createpayment-modulex-service/.env.prod.example).
 
 Что осталось 🔜:

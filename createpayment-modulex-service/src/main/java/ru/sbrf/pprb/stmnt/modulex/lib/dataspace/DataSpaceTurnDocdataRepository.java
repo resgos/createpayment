@@ -2,7 +2,6 @@ package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
 import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 import ru.sbrf.pprb.stmnt.modulex.graph.get.TurnDocdataGet;
@@ -28,7 +27,6 @@ import java.util.Optional;
  * конвертим через {@link Timestamp#valueOf(LocalDateTime)}.</p>
  */
 @Slf4j
-@Primary
 @Component
 public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
 
