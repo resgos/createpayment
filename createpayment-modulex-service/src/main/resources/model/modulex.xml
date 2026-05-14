@@ -189,15 +189,17 @@
         <property name="ccWalletDt" type="String" length="254" isDeprecated="true" label="Кошелек по Дт (deprecated)"/>
         <property name="ccWalletKt" type="String" length="254" isDeprecated="true" label="Кошелек по Кт (deprecated)"/>
 
+        <!--
+          Уникальность по паре (ccBchOperationId, ccContractId).
+          В БД соответствует частичному уник-индексу:
+          WHERE sys_isdeleted = false AND ccbchoperationid IS NOT NULL AND cccontractid IS NOT NULL.
+        -->
         <index unique="true">
-            <property name="ccBchOperationId"/>
-        </index>
-        <index unique="true">
-            <property name="ccTxId"/>
-        </index>
-        <index unique="false">
             <property name="ccBchOperationId"/>
             <property name="ccContractId"/>
+        </index>
+        <index unique="false">
+            <property name="ccTxId"/>
         </index>
         <index unique="false">
             <property name="ccOwnerDt"/>

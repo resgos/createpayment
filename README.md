@@ -222,7 +222,7 @@ Content-Type: application/json
 | Класс | Назначение | Уникальный индекс |
 |---|---|---|
 | `RegisterWallet` | регистр кошелька (счёт) | `ccRegisterId` |
-| `WalletTurn` | оборот кошелька из blockchain | `ccBchOperationId`, `ccTxId` |
+| `WalletTurn` | оборот кошелька из blockchain | `(ccBchOperationId, ccContractId)` |
 | `TurnDocdata` | банковский документ оборота | `ccTransactionId` |
 | `StatusWalletTurn` | статусы платежа | **`(ccWalletTurnObjectId, ccStatus)`** |
 | `BlockOffset` / `Block` | техтаблицы обработки блоков | `ccBlockId` |
@@ -466,6 +466,7 @@ mvn -f _test-runner/pom.xml test
 - Outbound REST callback с финальным `ExecutionResult` инициатору.
 - In-memory DataSpace моки (3 репозитория), сквозной тест.
 - `ccDivisionId` резолвится из `FSKK_DT.divisionId`; `ccReceiptDate` ставится `now()` на приёме `execute`.
+- Индексы `WalletTurn` в [model/modulex.xml](createpayment-modulex-service/src/main/resources/model/modulex.xml) синхронизированы с актуальным DDL: уникальность по `(ccBchOperationId, ccContractId)`, обычный индекс по `ccTxId`.
 
 Что осталось 🔜:
 
