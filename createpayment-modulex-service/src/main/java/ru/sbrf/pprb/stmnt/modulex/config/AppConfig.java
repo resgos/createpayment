@@ -72,14 +72,9 @@ public class AppConfig {
                 sberObjectMapper);
     }
 
-    @Bean
-    public RestTemplate resultCallbackRestTemplate(RestTemplateBuilder builder,
-                                                   ResultCallbackProperties props,
-                                                   ObjectMapper sberObjectMapper) {
-        return jsonRestTemplate(builder,
-                props.getConnectTimeoutMs(), props.getReadTimeoutMs(),
-                sberObjectMapper);
-    }
+    // RestTemplate для result-callback клиент собирает себе сам в
+    // ResultCallbackClientImpl — это упрощает wiring и устраняет проблему
+    // с отсутствующим именованным бином при stale-сборке.
 
     private RestTemplate jsonRestTemplate(RestTemplateBuilder builder,
                                           int connectTimeoutMs, int readTimeoutMs,

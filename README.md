@@ -467,6 +467,7 @@ mvn -f _test-runner/pom.xml test
 - In-memory DataSpace моки (3 репозитория), сквозной тест.
 - `ccDivisionId` резолвится из `FSKK_DT.divisionId`; `ccReceiptDate` ставится `now()` на приёме `execute`.
 - Индексы `WalletTurn` в [model/modulex.xml](createpayment-modulex-service/src/main/resources/model/modulex.xml) синхронизированы с актуальным DDL: уникальность по `(ccBchOperationId, ccContractId)`, обычный индекс по `ccTxId`.
+- `ResultCallbackClientImpl` self-contained: собирает собственный `RestTemplate` через `RestTemplateBuilder` — устранена ошибка wiring при stale-сборке.
 
 Что осталось 🔜:
 
