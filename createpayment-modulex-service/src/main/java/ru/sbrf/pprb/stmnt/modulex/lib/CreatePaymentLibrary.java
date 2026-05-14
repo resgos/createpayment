@@ -163,6 +163,7 @@ public class CreatePaymentLibrary {
                                            LocalDateTime rqTm, String txId, String operationId,
                                            String rqUID) {
         LocalDateTime ccDate = wt.getCcDate() != null ? wt.getCcDate() : LocalDateTime.now(AppConfig.ZONE_ID);
+        LocalDateTime now = LocalDateTime.now(AppConfig.ZONE_ID);
         String contractId = contractIdOverride != null ? contractIdOverride : wt.getCcContractId();
 
         TurnDocdataDraftBuilder b = TurnDocdataDraft.builder()
@@ -180,6 +181,9 @@ public class CreatePaymentLibrary {
                 .ccDate(ccDate)
                 .ccOperationDay(ccDate.toLocalDate())
                 .ccDateDoc(wt.getCcDateDoc())
+                // Дата поступления распоряжения в банк плательщика — момент приёма execute.
+                // Исполнение может позже перезаписать своим значением.
+                .ccReceiptDate(now)
                 .ccSum(wt.getCcSum())
                 .ccSumNAT(wt.getCcSum())
                 .ccSumPO(wt.getCcSum())
@@ -196,7 +200,7 @@ public class CreatePaymentLibrary {
                 .ccValutaTrans(TurnDocdataDefaults.CURRENCY_RUB)
                 .ccPriority(TurnDocdataDefaults.PRIORITY_DEFAULT)
                 .ccSystemId(TurnDocdataDefaults.SYSTEM_ID)
-                .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID));
+                .sysLastChangeDate(now);
 
         return b.build();
     }

@@ -10,6 +10,7 @@ import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePayment;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionResult;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionStatus;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnInput;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
@@ -171,6 +172,38 @@ class CreatePaymentLibraryTest {
         assertThat(results).hasSize(2);
         assertThat(results.get(0).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
         assertThat(results.get(1).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
+    }
+
+    @Test
+    void draftCarriesCcDivisionIdAndCcReceiptDate() {
+        walletTurnRepository.put(sampleWalletTurn());
+        // FSKK_DT с явным divisionId — он должен попасть в драфт
+        GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
+        fskk.setAccNum("acc-dt");
+        fskk.setAccBic("bic-dt");
+        fskk.setAccBankCorrAcc("corr-dt");
+        fskk.setUcpId(UCP_DT);
+        fskk.setDivisionId("38903801697");
+        GetSberIntegrationResult byReg = new GetSberIntegrationResult();
+        byReg.setFskk(fskk);
+        when(sberClient.getByRegisterId(eq(REG_DT), anyString())).thenReturn(byReg);
+        GetSberIntegrationResult.Epk epk = new GetSberIntegrationResult.Epk();
+        epk.setOrgName("DT");
+        GetSberIntegrationResult byUcp = new GetSberIntegrationResult();
+        byUcp.setEpk(List.of(epk));
+        when(sberClient.getByUcpId(eq(UCP_DT), anyString())).thenReturn(byUcp);
+        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
+
+        LocalDateTime before = LocalDateTime.now().minusSeconds(2);
+        library.execute(baseRequest(BCH_OP_1, CONTRACT_1));
+        LocalDateTime after = LocalDateTime.now().plusSeconds(2);
+
+        TurnDocdataDraft persisted = turnDocdataRepository.findByOperationId(GEN_OPERATION_ID).orElseThrow();
+        // ccDivisionId резолвлен из FSKK_DT.divisionId
+        assertThat(persisted.getCcDivisionId()).isEqualTo("38903801697");
+        // ccReceiptDate — момент приёма execute (now)
+        assertThat(persisted.getCcReceiptDate()).isNotNull();
+        assertThat(persisted.getCcReceiptDate()).isAfter(before).isBefore(after);
     }
 
     @Test
