@@ -1,0 +1,61 @@
+# Production-профиль. Активируется через SPRING_PROFILES_ACTIVE=prod
+# либо spring.profiles.active=prod.
+#
+# Ключевые отличия от дефолта:
+#   - все URL берутся ТОЛЬКО из env, fail-fast если не заданы;
+#   - таймауты подкручены;
+#   - логирование INFO/WARN, health-details: never (без сведений о компонентах);
+#   - сетевые retry'и приподняты.
+
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    date-format: "yyyy-MM-dd'T'HH:mm:ss"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: never
+
+dataspace:
+  url: ${DATASPACE_URL}
+  connection-timeout: ${DATASPACE_CONNECT_TIMEOUT_MS:5000}
+  read-timeout: ${DATASPACE_READ_TIMEOUT_MS:30000}
+
+result-callback:
+  enabled: true
+  url: ${RESULT_CALLBACK_URL}
+  connect-timeout-ms: ${RESULT_CALLBACK_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${RESULT_CALLBACK_READ_TIMEOUT_MS:15000}
+  max-attempts: ${RESULT_CALLBACK_MAX_ATTEMPTS:5}
+  retry-delay-ms: ${RESULT_CALLBACK_RETRY_DELAY_MS:10000}
+
+pgw:
+  enabled: true
+  url: ${PGW_URL}
+  transfer-path: /upd/transfer
+  connect-timeout-ms: ${PGW_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${PGW_READ_TIMEOUT_MS:60000}
+  max-attempts: ${PGW_MAX_ATTEMPTS:5}
+  retry-delay-ms: ${PGW_RETRY_DELAY_MS:30000}
+
+sber-integration:
+  url: ${SBER_INTEGRATION_URL}
+  method: getSberIntegration
+  version: "1.0"
+  connect-timeout-ms: ${SBER_INTEGRATION_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${SBER_INTEGRATION_READ_TIMEOUT_MS:15000}
+  bic-directory: ${SBER_INTEGRATION_BIC_DIRECTORY:true}
+
+logging:
+  level:
+    root: WARN
+    ru.sbrf.pprb.stmnt.modulex: INFO

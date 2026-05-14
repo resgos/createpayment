@@ -1,5 +1,8 @@
+# Defaults — IFT-стенд. Любую строчку можно перебить env-переменной
+# (Spring Boot бьёт `dataspace.url` ↔ DATASPACE_URL и т.д.) или -D-флагом.
+
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
@@ -16,33 +19,45 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: ${ACTUATOR_HEALTH_DETAILS:always}
 
+# ----- DataSpace -----------------------------------------------------
+# Используется DataSpaceApi-бином из simpleservicemodulex. Ключи —
+# те же, что ожидает corp DataSpaceProperties.
+dataspace:
+  url: ${DATASPACE_URL:http://localhost:9090/dataspace}
+  connection-timeout: ${DATASPACE_CONNECT_TIMEOUT_MS:5000}
+  read-timeout: ${DATASPACE_READ_TIMEOUT_MS:30000}
+
+# ----- Outbound REST в адрес инициатора платежа ----------------------
+# Финальный ExecutionResult после квитанции PGW уходит сюда.
 result-callback:
-  enabled: false
-  url: ""
-  connect-timeout-ms: 5000
-  read-timeout-ms: 15000
-  max-attempts: 3
-  retry-delay-ms: 5000
+  enabled: ${RESULT_CALLBACK_ENABLED:false}
+  url: ${RESULT_CALLBACK_URL:}
+  connect-timeout-ms: ${RESULT_CALLBACK_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${RESULT_CALLBACK_READ_TIMEOUT_MS:15000}
+  max-attempts: ${RESULT_CALLBACK_MAX_ATTEMPTS:3}
+  retry-delay-ms: ${RESULT_CALLBACK_RETRY_DELAY_MS:5000}
 
+# ----- PGW transferUpd ----------------------------------------------
 pgw:
-  enabled: true
-  url: https://ingress-pgw-4g-ift.https.dev-sh5.ocp-geo.delta.sbrf.ru
-  transfer-path: /upd/transfer
-  connect-timeout-ms: 5000
-  read-timeout-ms: 30000
-  max-attempts: 3
-  retry-delay-ms: 30000
+  enabled: ${PGW_ENABLED:true}
+  url: ${PGW_URL:https://ingress-pgw-4g-ift.https.dev-sh5.ocp-geo.delta.sbrf.ru}
+  transfer-path: ${PGW_TRANSFER_PATH:/upd/transfer}
+  connect-timeout-ms: ${PGW_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${PGW_READ_TIMEOUT_MS:30000}
+  max-attempts: ${PGW_MAX_ATTEMPTS:3}
+  retry-delay-ms: ${PGW_RETRY_DELAY_MS:30000}
 
+# ----- sberIntegration ----------------------------------------------
 sber-integration:
-  url: http://stmnt-http.apps.bcivthq2.k8s.delta.sbrf.ru/sberintegration-statement-server/execute
-  method: getSberIntegration
-  version: "1.0"
-  connect-timeout-ms: 5000
-  read-timeout-ms: 15000
-  bic-directory: false
+  url: ${SBER_INTEGRATION_URL:http://stmnt-http.apps.bcivthq2.k8s.delta.sbrf.ru/sberintegration-statement-server/execute}
+  method: ${SBER_INTEGRATION_METHOD:getSberIntegration}
+  version: ${SBER_INTEGRATION_VERSION:"1.0"}
+  connect-timeout-ms: ${SBER_INTEGRATION_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${SBER_INTEGRATION_READ_TIMEOUT_MS:15000}
+  bic-directory: ${SBER_INTEGRATION_BIC_DIRECTORY:false}
 
 logging:
   level:
-    ru.sbrf.pprb.stmnt.modulex: DEBUG
+    ru.sbrf.pprb.stmnt.modulex: ${LOG_LEVEL_MODULEX:DEBUG}

@@ -237,68 +237,49 @@ Content-Type: application/json
 
 ## Конфигурация
 
-### `application.yml`
+### Конфиги и профили
 
-```yaml
-server:
-  port: 8080
+| Файл / профиль | Назначение |
+|---|---|
+| [`application.yml`](createpayment-modulex-service/src/main/resources/application.yml) | Дефолты, ориентированы на IFT-стенд. Все URL допускают перебивку через env-переменную (`${DATASPACE_URL:default}` и т.д.) |
+| [`application-prod.yml`](createpayment-modulex-service/src/main/resources/application-prod.yml) | Production-профиль. Все URL **обязательны** из env (fail-fast), таймауты приподняты, `health-details: never`, лог `INFO/WARN` |
+| [`.env.prod.example`](createpayment-modulex-service/.env.prod.example) | Шаблон env-переменных для прода: каждый URL отдельно, плюс тюны таймаутов |
 
-spring:
-  application:
-    name: createpayment-modulex-service
-  jackson:
-    serialization:
-      write-dates-as-timestamps: false
-    date-format: "yyyy-MM-dd'T'HH:mm:ss"
+### Включение prod-профиля
 
-# Исходящий вызов sberIntegration
-sber-integration:
-  url: http://stmnt-http.apps.bcivthq2.k8s.delta.sbrf.ru/sberintegration-statement-server/execute
-  method: getSberIntegration
-  version: "1.0"
-  connect-timeout-ms: 5000
-  read-timeout-ms: 15000
-  bic-directory: false
+```bash
+# через переменную окружения
+SPRING_PROFILES_ACTIVE=prod \
+DATASPACE_URL=http://dataspace.prod/... \
+PGW_URL=https://pgw.prod/... \
+RESULT_CALLBACK_URL=https://caller.prod/callback \
+SBER_INTEGRATION_URL=http://sber-integration.prod/... \
+java -jar createpayment-modulex-service.jar
 
-# Исходящий вызов PGW
-pgw:
-  enabled: true
-  url: https://ingress-pgw-4g-ift.https.dev-sh5.ocp-geo.delta.sbrf.ru
-  transfer-path: /upd/transfer
-  connect-timeout-ms: 5000
-  read-timeout-ms: 30000
-  max-attempts: 3
-  retry-delay-ms: 30000   # минимум 30 сек по спеке гарант-доставки
-
-# Outbound callback инициатору после финальной квитанции
-result-callback:
-  enabled: false          # включи после согласования URL
-  url: ""
-  connect-timeout-ms: 5000
-  read-timeout-ms: 15000
-  max-attempts: 3
-  retry-delay-ms: 5000
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-
-logging:
-  level:
-    ru.sbrf.pprb.stmnt.modulex: DEBUG
+# либо JVM-флагом
+java -jar app.jar --spring.profiles.active=prod
 ```
+
+### Ключевые URL — env-переменные
+
+| Свойство (yml) | Env-переменная | Назначение |
+|---|---|---|
+| `dataspace.url` | `DATASPACE_URL` | URL DataSpace для `DataSpaceApi` |
+| `pgw.url` | `PGW_URL` | Базовый URL PGW для `transferUpd` |
+| `result-callback.url` | `RESULT_CALLBACK_URL` | Куда POST'ить финальный `ExecutionResult` |
+| `sber-integration.url` | `SBER_INTEGRATION_URL` | URL sberIntegration JSON-RPC |
+| `result-callback.enabled` | `RESULT_CALLBACK_ENABLED` | `true` — реально слать; `false` — только лог |
+| `pgw.enabled` | `PGW_ENABLED` | `false` — отключить отправку в PGW (для dev) |
 
 ### Что включить, чтобы пайплайн заработал на dev-стенде
 
-1. `pgw.url` — указывает на конкретный ИФТ-стенд PGW.
-2. `result-callback.enabled: true` + `result-callback.url` — URL инициатора, который должен получать финальные ExecutionResult'ы.
-3. `sber-integration.url` — sberIntegration ИФТ.
+1. `DATASPACE_URL` — DataSpace стенда (если будет реальная DataSpace-имплементация).
+2. `PGW_URL` — ИФТ-стенд PGW.
+3. `RESULT_CALLBACK_ENABLED=true` + `RESULT_CALLBACK_URL` — URL инициатора, который должен получать финальные ExecutionResult'ы.
+4. `SBER_INTEGRATION_URL` — sberIntegration ИФТ.
 
-При первом запуске без DataSpace-имплементации репозитории работают
-in-memory — поведение видно в логах (`InMemoryWalletTurnRepository.put`,
-`turn_docdata save`, `status_WalletTurn upsert`).
+Без DataSpace-имплементации репозитории работают in-memory — поведение
+видно в логах (`turn_docdata save`, `status_WalletTurn upsert`).
 
 ---
 
@@ -604,6 +585,7 @@ Spring Boot 3.5 — может не зарегистрировать бин да
 - Индексы `WalletTurn` в [model/modulex.xml](createpayment-modulex-service/src/main/resources/model/modulex.xml) синхронизированы с актуальным DDL: уникальность по `(ccBchOperationId, ccContractId)`, обычный индекс по `ccTxId`.
 - `ResultCallbackClientImpl` self-contained: собирает собственный `RestTemplate` через `RestTemplateBuilder` — устранена ошибка wiring при stale-сборке.
 - In-memory репозитории перешли с `@ConditionalOnMissingBean` на plain `@Component` — Spring Boot 3.5 не всегда регистрировал условный бин при отсутствии других кандидатов. Подключение реального DataSpace теперь через `@Primary` (см. секцию выше).
+- Конфиг переведён на env-var pattern (`${VAR:default}`) для всех URL. Добавлен профиль [`application-prod.yml`](createpayment-modulex-service/src/main/resources/application-prod.yml) (fail-fast при отсутствии prod-URL) и шаблон [`.env.prod.example`](createpayment-modulex-service/.env.prod.example).
 
 Что осталось 🔜:
 
