@@ -1,13 +1,16 @@
 package ru.sbrf.pprb.stmnt.modulex.api.dto;
 
 /**
- * Итог пайплайна по одной walletTurn (синхронный — после отправки в PGW).
- * Финальный статус ({@code PPRB_EXECUTED} vs промежуточный {@code PPRB_PROCESSING})
- * приходит асинхронно через {@code /upd/response/execute}.
+ * Жизненный цикл итога по walletTurn:
+ * <ul>
+ *   <li>{@link #PPRB_PROCESSING} — синхронно после {@code transferUpd} в PGW;
+ *       финального ответа от PGW ещё нет.</li>
+ *   <li>{@link #PPRB_EXECUTED}   — пришла успешная квитанция от PGW (коды 300/301/315).</li>
+ *   <li>{@link #PPRB_FAILED}     — сбой пайплайна или ошибка от PGW (коды 100-199).</li>
+ * </ul>
  */
 public enum ExecutionStatus {
-    /** Пайплайн собрал pacs.008 и отправил в PGW — приняло. */
+    PPRB_PROCESSING,
     PPRB_EXECUTED,
-    /** Любой сбой на пути: lookup, обогащение, сборка XML, PGW. */
     PPRB_FAILED
 }

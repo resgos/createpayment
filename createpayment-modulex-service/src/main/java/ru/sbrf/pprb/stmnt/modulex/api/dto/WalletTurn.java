@@ -14,7 +14,7 @@ import java.util.Date;
  * Заполняется DataSpace-репозиторием по {@code ccBchOperationId}.
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class WalletTurn {

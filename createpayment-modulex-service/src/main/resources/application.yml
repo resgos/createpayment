@@ -18,6 +18,14 @@ management:
     health:
       show-details: always
 
+result-callback:
+  enabled: false
+  url: ""
+  connect-timeout-ms: 5000
+  read-timeout-ms: 15000
+  max-attempts: 3
+  retry-delay-ms: 5000
+
 pgw:
   enabled: true
   url: https://ingress-pgw-4g-ift.https.dev-sh5.ocp-geo.delta.sbrf.ru

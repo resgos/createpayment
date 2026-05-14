@@ -52,14 +52,20 @@ class CreatePaymentLibraryTest {
     @Mock private SberIntegrationClient sberClient;
     @Mock private TurnDocdataIdGenerator idGenerator;
     @Mock private PgwClient pgwClient;
-    @Mock private WalletTurnRepository walletTurnRepository;
 
+    private InMemoryWalletTurnRepository walletTurnRepository;
+    private InMemoryTurnDocdataRepository turnDocdataRepository;
+    private InMemoryStatusWalletTurnRepository statusRepository;
     private CreatePaymentLibrary library;
 
     @BeforeEach
     void setUp() {
+        walletTurnRepository = new InMemoryWalletTurnRepository();
+        turnDocdataRepository = new InMemoryTurnDocdataRepository();
+        statusRepository = new InMemoryStatusWalletTurnRepository();
         library = new CreatePaymentLibrary(new SimpleValidator(), sberClient, idGenerator,
-                new Pacs008Builder(), pgwClient, walletTurnRepository);
+                new Pacs008Builder(), pgwClient, walletTurnRepository,
+                turnDocdataRepository, statusRepository);
 
         lenient().when(idGenerator.operationId()).thenReturn(GEN_OPERATION_ID);
         lenient().when(idGenerator.transactionId()).thenReturn(GEN_TX_ID);
@@ -72,8 +78,8 @@ class CreatePaymentLibraryTest {
     }
 
     @Test
-    void executedResultWhenPipelineSucceeds() {
-        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.of(sampleWalletTurn()));
+    void processingResultAndPersistedRowsWhenPipelineSucceeds() {
+        walletTurnRepository.put(sampleWalletTurn());
         mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "ООО Плательщик", "INN-1", "KPP-1");
         mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "ООО Получатель", "INN-2", "KPP-2");
 
@@ -81,18 +87,24 @@ class CreatePaymentLibraryTest {
 
         assertThat(response.getExecutionResults()).hasSize(1);
         ExecutionResult result = response.getExecutionResults().get(0);
-        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
         assertThat(result.getStatusDescription()).isNull();
         assertThat(result.getTransactionId()).isEqualTo(GEN_TX_ID);
         assertThat(result.getOperationId()).isEqualTo(GEN_OPERATION_ID);
         assertThat(result.getBchOperationId()).isEqualTo(BCH_OP_1);
         assertThat(result.getContractId()).isEqualTo(CONTRACT_1);
+
+        // turn_docdata сохранён, status_WalletTurn в PROCESSING
+        assertThat(turnDocdataRepository.findByOperationId(GEN_OPERATION_ID)).isPresent();
+        StatusWalletTurnUpdate row = statusRepository.find(BCH_OP_1, "PPRB_PROCESSING");
+        assertThat(row).isNotNull();
+        assertThat(row.getCcOperationId()).isEqualTo(GEN_OPERATION_ID);
+        assertThat(row.getCcTransactionId()).isEqualTo(GEN_TX_ID);
     }
 
     @Test
     void failedWhenWalletTurnNotFound() {
-        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.empty());
-
+        // в репозитории пусто
         ExecutionResult result = library.execute(baseRequest(BCH_OP_1, CONTRACT_1))
                 .getExecutionResults().get(0);
 
@@ -100,9 +112,13 @@ class CreatePaymentLibraryTest {
         assertThat(result.getStatusDescription()).contains("WalletTurn not found");
         assertThat(result.getBchOperationId()).isEqualTo(BCH_OP_1);
         assertThat(result.getContractId()).isEqualTo(CONTRACT_1);
-        // transactionId/operationId не генерим, если lookup упал
         assertThat(result.getTransactionId()).isNull();
         assertThat(result.getOperationId()).isNull();
+
+        // FAILED-статус всё равно зафиксирован
+        StatusWalletTurnUpdate row = statusRepository.find(BCH_OP_1, "PPRB_FAILED");
+        assertThat(row).isNotNull();
+        assertThat(row.getCcStatusDesc()).contains("WalletTurn not found");
     }
 
     @Test
@@ -115,8 +131,8 @@ class CreatePaymentLibraryTest {
     }
 
     @Test
-    void pgwFailureMarksItemFailedButPipelineContinues() {
-        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.of(sampleWalletTurn()));
+    void pgwFailureMarksItemFailedAndPersistsFailedStatus() {
+        walletTurnRepository.put(sampleWalletTurn());
         mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
         mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
         when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
@@ -127,12 +143,15 @@ class CreatePaymentLibraryTest {
 
         assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
         assertThat(result.getStatusDescription()).contains("PGW unreachable");
+        // PROCESSING не сохраняется — только FAILED
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_PROCESSING")).isNull();
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_FAILED")).isNotNull();
     }
 
     @Test
-    void batchMixesExecutedAndFailed() {
-        when(walletTurnRepository.findByBchOperationId("BCH-OK")).thenReturn(Optional.of(sampleWalletTurn()));
-        when(walletTurnRepository.findByBchOperationId("BCH-MISS")).thenReturn(Optional.empty());
+    void batchMixesProcessingAndFailed() {
+        WalletTurn ok = sampleWalletTurn().toBuilder().ccBchOperationId("BCH-OK").build();
+        walletTurnRepository.put(ok);
         mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
         mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
         when(idGenerator.transactionId()).thenReturn("tx-1", "tx-2");
@@ -150,13 +169,13 @@ class CreatePaymentLibraryTest {
         List<ExecutionResult> results = library.execute(request).getExecutionResults();
 
         assertThat(results).hasSize(2);
-        assertThat(results.get(0).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
+        assertThat(results.get(0).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
         assertThat(results.get(1).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
     }
 
     @Test
     void upddtoCarriesPacs008AndCorrectAttributes() {
-        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.of(sampleWalletTurn()));
+        walletTurnRepository.put(sampleWalletTurn());
         mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
         mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
         ArgumentCaptor<UPDDTO> upd = ArgumentCaptor.forClass(UPDDTO.class);

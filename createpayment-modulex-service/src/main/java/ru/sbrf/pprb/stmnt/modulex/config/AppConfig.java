@@ -18,7 +18,9 @@ import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
 import ru.sbrf.pprb.stmnt.modulex.lib.Pacs008Builder;
+import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataIdGenerator;
+import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.WalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
@@ -31,7 +33,8 @@ import java.time.format.DateTimeFormatter;
 @ComponentScan({"ru.sbrf.pprb.stmnt"})
 @EnableConfigurationProperties({
         SberIntegrationProperties.class,
-        PgwProperties.class
+        PgwProperties.class,
+        ResultCallbackProperties.class
 })
 public class AppConfig {
 
@@ -69,6 +72,15 @@ public class AppConfig {
                 sberObjectMapper);
     }
 
+    @Bean
+    public RestTemplate resultCallbackRestTemplate(RestTemplateBuilder builder,
+                                                   ResultCallbackProperties props,
+                                                   ObjectMapper sberObjectMapper) {
+        return jsonRestTemplate(builder,
+                props.getConnectTimeoutMs(), props.getReadTimeoutMs(),
+                sberObjectMapper);
+    }
+
     private RestTemplate jsonRestTemplate(RestTemplateBuilder builder,
                                           int connectTimeoutMs, int readTimeoutMs,
                                           ObjectMapper om) {
@@ -94,8 +106,11 @@ public class AppConfig {
                                                      TurnDocdataIdGenerator idGenerator,
                                                      Pacs008Builder pacs008Builder,
                                                      PgwClient pgwClient,
-                                                     WalletTurnRepository walletTurnRepository) {
+                                                     WalletTurnRepository walletTurnRepository,
+                                                     TurnDocdataRepository turnDocdataRepository,
+                                                     StatusWalletTurnRepository statusWalletTurnRepository) {
         return new CreatePaymentLibrary(simpleValidator, sberIntegrationClient, idGenerator,
-                pacs008Builder, pgwClient, walletTurnRepository);
+                pacs008Builder, pgwClient, walletTurnRepository,
+                turnDocdataRepository, statusWalletTurnRepository);
     }
 }

@@ -42,19 +42,25 @@ public class CreatePaymentLibrary {
     private final Pacs008Builder pacs008Builder;
     private final PgwClient pgwClient;
     private final WalletTurnRepository walletTurnRepository;
+    private final TurnDocdataRepository turnDocdataRepository;
+    private final StatusWalletTurnRepository statusWalletTurnRepository;
 
     public CreatePaymentLibrary(SimpleValidator simpleValidator,
                                 SberIntegrationClient sberClient,
                                 TurnDocdataIdGenerator idGenerator,
                                 Pacs008Builder pacs008Builder,
                                 PgwClient pgwClient,
-                                WalletTurnRepository walletTurnRepository) {
+                                WalletTurnRepository walletTurnRepository,
+                                TurnDocdataRepository turnDocdataRepository,
+                                StatusWalletTurnRepository statusWalletTurnRepository) {
         this.simpleValidator = simpleValidator;
         this.sberClient = sberClient;
         this.idGenerator = idGenerator;
         this.pacs008Builder = pacs008Builder;
         this.pgwClient = pgwClient;
         this.walletTurnRepository = walletTurnRepository;
+        this.turnDocdataRepository = turnDocdataRepository;
+        this.statusWalletTurnRepository = statusWalletTurnRepository;
     }
 
     public CreatePaymentResponse execute(CreatePayment request) {
@@ -110,16 +116,40 @@ public class CreatePaymentLibrary {
             draft.setPacs008Xml(xml);
             sendToPgw(draft, xml);
 
+            // PGW принял — фиксируем draft и статус PROCESSING. Финальный
+            // PPRB_EXECUTED/PPRB_FAILED придёт асинхронно квитанцией PGW.
+            turnDocdataRepository.save(draft);
+            statusWalletTurnRepository.upsertStatus(StatusWalletTurnUpdate.builder()
+                    .ccWalletTurnObjectId(bchOpId)
+                    .ccOperationId(operationId)
+                    .ccTransactionId(txId)
+                    .ccStatus(ExecutionStatus.PPRB_PROCESSING.name())
+                    .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID))
+                    .build());
+
             return ExecutionResult.builder()
                     .transactionId(txId)
                     .operationId(operationId)
                     .bchOperationId(bchOpId)
                     .contractId(contractId)
-                    .resultStatus(ExecutionStatus.PPRB_EXECUTED)
+                    .resultStatus(ExecutionStatus.PPRB_PROCESSING)
                     .statusDescription(null)
                     .build();
         } catch (Exception e) {
             log.warn("processOne failed for ccBchOperationId={}: {}", bchOpId, e.getMessage());
+            // Если успели сгенерировать ID — кладём негативный статус сразу.
+            if (bchOpId != null) {
+                try {
+                    statusWalletTurnRepository.upsertStatus(StatusWalletTurnUpdate.builder()
+                            .ccWalletTurnObjectId(bchOpId)
+                            .ccStatus(ExecutionStatus.PPRB_FAILED.name())
+                            .ccStatusDesc(e.getMessage())
+                            .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID))
+                            .build());
+                } catch (Exception inner) {
+                    log.warn("Failed to persist FAILED status: {}", inner.getMessage());
+                }
+            }
             return ExecutionResult.builder()
                     .bchOperationId(bchOpId)
                     .contractId(contractId)

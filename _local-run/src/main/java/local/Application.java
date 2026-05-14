@@ -100,7 +100,10 @@ public class Application {
         };
     }
 
-    /** Заглушка walletTurn-репозитория — всегда возвращает синтетический оборот. */
+    /**
+     * Локальная замена DataSpace: вместо реальной выборки всегда отдаёт
+     * синтетический WalletTurn — чтобы пайплайн end-to-end проходил без БД.
+     */
     @Bean
     @Primary
     public WalletTurnRepository stubWalletTurnRepository() {

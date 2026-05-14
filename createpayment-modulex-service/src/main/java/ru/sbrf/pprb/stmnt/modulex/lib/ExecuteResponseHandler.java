@@ -2,26 +2,39 @@ package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionResult;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionStatus;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
+import ru.sbrf.pprb.stmnt.modulex.integration.callback.ResultCallbackClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ResponseTicketRequest;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.StatusInfo;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 /**
- * Принимает квитанцию PGW, маппит статус и пишет в status_WalletTurn.
- * Должен отрабатывать быстро — PGW ждёт синхронный ответ; «тяжёлую» логику
- * выносить в отдельный процесс.
+ * Принимает квитанцию PGW, мапит статус, обновляет status_WalletTurn и шлёт
+ * финальный ExecutionResult на внешний REST инициатора.
+ *
+ * <p>Отрабатывает быстро — PGW ждёт синхронный ответ; тяжёлая логика идёт
+ * в этом же треде, но в реальной нагрузке её нужно выносить в очередь.</p>
  */
 @Slf4j
 @Component
 public class ExecuteResponseHandler {
 
-    private final StatusWalletTurnRepository repository;
+    private final StatusWalletTurnRepository statusRepository;
+    private final TurnDocdataRepository turnDocdataRepository;
+    private final ResultCallbackClient resultCallback;
 
-    public ExecuteResponseHandler(StatusWalletTurnRepository repository) {
-        this.repository = repository;
+    public ExecuteResponseHandler(StatusWalletTurnRepository statusRepository,
+                                  TurnDocdataRepository turnDocdataRepository,
+                                  ResultCallbackClient resultCallback) {
+        this.statusRepository = statusRepository;
+        this.turnDocdataRepository = turnDocdataRepository;
+        this.resultCallback = resultCallback;
     }
 
     public ApiResult handle(String correlationId, String idempotencyKey, ResponseTicketRequest ticket) {
@@ -35,17 +48,21 @@ public class ExecuteResponseHandler {
         String desc = statusInfo != null ? statusInfo.getMessage() : null;
         String ccStatus = CcStatusMapper.map(ticket.getResultStatus(), code);
 
-        log.debug("PGW response: correlationId={}, idempotencyKey={}, updUID={}, resultStatus={}, code={}, ccStatus={}",
+        log.debug("PGW ticket: correlationId={}, idempotencyKey={}, updUID={}, resultStatus={}, code={}, ccStatus={}",
                 correlationId, idempotencyKey, ticket.getUpdUID(), ticket.getResultStatus(), code, ccStatus);
 
+        // turn_docdata по updUID = ccOperationId — нужен для резолва ccWalletTurnObjectId и
+        // ccTransactionId, а также для callback.
+        Optional<TurnDocdataDraft> draftOpt = turnDocdataRepository.findByOperationId(ticket.getUpdUID());
+        String walletTurnObjectId = draftOpt.map(TurnDocdataDraft::getCcBchOperationId).orElse(null);
+        String transactionId = draftOpt.map(TurnDocdataDraft::getCcTransactionId).orElse(null);
+        String contractId = draftOpt.map(TurnDocdataDraft::getCcContractId).orElse(null);
+
         try {
-            // ccWalletTurnObjectId резолвится из связанной walletTurn по ccOperationId;
-            // на placeholder-репозитории оставляем null. correlationId/idempotencyKey
-            // в StatusWalletTurn по новой спеке не хранятся — они в turn_docdata.
-            repository.upsertStatus(StatusWalletTurnUpdate.builder()
-                    .ccWalletTurnObjectId(null)
+            statusRepository.upsertStatus(StatusWalletTurnUpdate.builder()
+                    .ccWalletTurnObjectId(walletTurnObjectId)
                     .ccOperationId(ticket.getUpdUID())
-                    .ccTransactionId(null)
+                    .ccTransactionId(transactionId)
                     .ccStatus(ccStatus)
                     .ccStatusCode(code)
                     .ccStatusDesc(desc)
@@ -56,12 +73,39 @@ public class ExecuteResponseHandler {
             return errorResult(correlationId, idempotencyKey, e.getMessage());
         }
 
+        // Если квитанция финальная — шлём ExecutionResult инициатору.
+        if (isFinal(ccStatus)) {
+            try {
+                ExecutionResult er = ExecutionResult.builder()
+                        .transactionId(transactionId)
+                        .operationId(ticket.getUpdUID())
+                        .bchOperationId(walletTurnObjectId)
+                        .contractId(contractId)
+                        .resultStatus(toExecutionStatus(ccStatus))
+                        .statusDescription(ExecutionStatus.PPRB_FAILED.name().equals(ccStatus.toUpperCase()) ? desc : null)
+                        .build();
+                resultCallback.send(er);
+            } catch (Exception e) {
+                log.error("Result callback dispatch failed for correlationId={}: {}", correlationId, e.getMessage(), e);
+            }
+        }
+
         return ApiResult.builder()
                 .correlationId(correlationId)
                 .idempotencyKey(idempotencyKey)
                 .status("SUCCESS")
                 .message("Ticket accepted, ccStatus=" + ccStatus)
                 .build();
+    }
+
+    private boolean isFinal(String ccStatus) {
+        return CcStatusMapper.EXECUTED.equals(ccStatus) || CcStatusMapper.FAILED.equals(ccStatus);
+    }
+
+    private ExecutionStatus toExecutionStatus(String ccStatus) {
+        if (CcStatusMapper.EXECUTED.equals(ccStatus)) return ExecutionStatus.PPRB_EXECUTED;
+        if (CcStatusMapper.FAILED.equals(ccStatus)) return ExecutionStatus.PPRB_FAILED;
+        return ExecutionStatus.PPRB_PROCESSING;
     }
 
     private ApiResult errorResult(String correlationId, String idempotencyKey, String message) {
