@@ -405,7 +405,7 @@ GET /actuator/metrics
 
 ## Тесты
 
-**46/46 проходят** (`mvn test` через `_test-runner/pom.xml` — наследует
+**47/47 проходят** (`mvn test` через `_test-runner/pom.xml` — наследует
 `spring-boot-starter-parent` из Maven Central, чтобы запускаться без
 корп. Nexus).
 
@@ -413,7 +413,7 @@ GET /actuator/metrics
 |---|---|---|
 | [Pacs008BuilderTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/Pacs008BuilderTest.java) | сборка XML по спеке (TaxRmt, BrnchId, CreDtTm с offset, и т.д.) | 16 |
 | [CcStatusMapperTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/CcStatusMapperTest.java) | маппинг PGW status + code → ccStatus | 7 |
-| [CreatePaymentLibraryTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/CreatePaymentLibraryTest.java) | основной поток с in-mem репо | 6 |
+| [CreatePaymentLibraryTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/CreatePaymentLibraryTest.java) | основной поток с in-mem репо (вкл. ccDivisionId и ccReceiptDate) | 7 |
 | [ExecuteResponseHandlerTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/ExecuteResponseHandlerTest.java) | обработка квитанции + ResultCallback | 5 |
 | [TurnDocdataIdGeneratorTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/TurnDocdataIdGeneratorTest.java) | формат и уникальность UUID / docNum | 5 |
 | [SberRequestSerializationTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/integration/sber/dto/SberRequestSerializationTest.java) | сериализация запросов к sberIntegration (rqTm как ISO-строка) | 4 |
@@ -465,6 +465,7 @@ mvn -f _test-runner/pom.xml test
 - Приём квитанции `/upd/response/execute` с маппингом PGW status → ccStatus.
 - Outbound REST callback с финальным `ExecutionResult` инициатору.
 - In-memory DataSpace моки (3 репозитория), сквозной тест.
+- `ccDivisionId` резолвится из `FSKK_DT.divisionId`; `ccReceiptDate` ставится `now()` на приёме `execute`.
 
 Что осталось 🔜:
 
