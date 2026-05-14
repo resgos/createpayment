@@ -1,7 +1,6 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -12,10 +11,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * In-memory мок DataSpace для {@code status_WalletTurn}.
  * Уник-ключ {@code (ccWalletTurnObjectId, ccStatus)} — повторный upsert
  * с теми же ключами просто перезаписывает запись.
+ *
+ * <p>Подключи реальную DataSpace-имплементацию через свой {@code @Component @Primary} —
+ * она вытеснит этот fallback. {@code @ConditionalOnMissingBean} на @Component работает
+ * нестабильно в Spring Boot 3.5, поэтому используем явный {@code @Primary} вместо него.</p>
  */
 @Slf4j
 @Component
-@ConditionalOnMissingBean(StatusWalletTurnRepository.class)
 public class InMemoryStatusWalletTurnRepository implements StatusWalletTurnRepository {
 
     private final Map<String, StatusWalletTurnUpdate> store = new ConcurrentHashMap<>();

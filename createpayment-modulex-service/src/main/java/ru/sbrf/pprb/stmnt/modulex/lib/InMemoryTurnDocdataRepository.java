@@ -1,7 +1,6 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 
@@ -11,11 +10,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory мок DataSpace для {@code turn_docdata}.
- * Ключ — {@code ccOperationId}.
+ * Ключ — {@code ccOperationId}. Подключи реальную DataSpace-имплементацию через
+ * свой {@code @Component @Primary} — она вытеснит этот fallback.
  */
 @Slf4j
 @Component
-@ConditionalOnMissingBean(TurnDocdataRepository.class)
 public class InMemoryTurnDocdataRepository implements TurnDocdataRepository {
 
     private final Map<String, TurnDocdataDraft> store = new ConcurrentHashMap<>();

@@ -1,7 +1,6 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
 
@@ -14,12 +13,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * Можно предварительно засеивать через {@link #put(WalletTurn)} (полезно в тестах
  * и локальном запуске). По умолчанию таблица пустая.
  *
- * <p>Будет вытеснен реальной реализацией поверх {@code DataSpaceApi}
- * благодаря {@link ConditionalOnMissingBean}.</p>
+ * <p>Подключи реальную DataSpace-имплементацию через свой {@code @Component @Primary} —
+ * она вытеснит этот fallback.</p>
  */
 @Slf4j
 @Component
-@ConditionalOnMissingBean(WalletTurnRepository.class)
 public class InMemoryWalletTurnRepository implements WalletTurnRepository {
 
     private final Map<String, WalletTurn> store = new ConcurrentHashMap<>();
