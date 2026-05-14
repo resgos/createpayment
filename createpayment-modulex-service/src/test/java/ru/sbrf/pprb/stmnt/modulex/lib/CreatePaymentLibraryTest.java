@@ -4,15 +4,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePayment;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.CreatePaymentResponse;
-import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionResult;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionStatus;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnInput;
-import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult;
-import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnResult.Status;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.UPDDTO;
@@ -22,10 +21,10 @@ import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,13 +32,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CreatePaymentLibraryTest {
 
+    private static final String BCH_OP_1 = "BCH-1";
+    private static final String CONTRACT_1 = "CONTRACT-1";
     private static final String REG_DT = "R-DT-1";
     private static final String REG_KT = "R-KT-1";
     private static final String UCP_DT = "UCP-DT";
@@ -50,413 +49,136 @@ class CreatePaymentLibraryTest {
     private static final String GEN_RQ_UID = "22222222-2222-2222-2222-222222222222";
     private static final String GEN_DOC_NUM = "123456";
 
-    @Mock
-    private SberIntegrationClient sberClient;
-
-    @Mock
-    private TurnDocdataIdGenerator idGenerator;
-
-    @Mock
-    private PgwClient pgwClient;
+    @Mock private SberIntegrationClient sberClient;
+    @Mock private TurnDocdataIdGenerator idGenerator;
+    @Mock private PgwClient pgwClient;
+    @Mock private WalletTurnRepository walletTurnRepository;
 
     private CreatePaymentLibrary library;
 
     @BeforeEach
     void setUp() {
-        SimpleValidator validator = new SimpleValidator();
-        library = new CreatePaymentLibrary(validator, sberClient, idGenerator,
-                new Pacs008Builder(), pgwClient);
+        library = new CreatePaymentLibrary(new SimpleValidator(), sberClient, idGenerator,
+                new Pacs008Builder(), pgwClient, walletTurnRepository);
 
         lenient().when(idGenerator.operationId()).thenReturn(GEN_OPERATION_ID);
         lenient().when(idGenerator.transactionId()).thenReturn(GEN_TX_ID);
         lenient().when(idGenerator.rqUId()).thenReturn(GEN_RQ_UID);
         lenient().when(idGenerator.docNum()).thenReturn(GEN_DOC_NUM);
 
-        // По умолчанию справочник банков пустой — отдельные тесты переопределяют.
-        lenient().when(sberClient.getBicDirectory(anyString())).thenReturn(emptyDirectoryResult());
-
-        // PGW по умолчанию возвращает correlationId = requestId.
+        lenient().when(sberClient.getBicDirectory(anyString())).thenReturn(emptyDirectory());
         lenient().when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
-                .thenAnswer(inv -> ApiResult.builder()
-                        .correlationId(inv.getArgument(0))
-                        .status("OK")
-                        .build());
+                .thenAnswer(inv -> ApiResult.builder().correlationId(inv.getArgument(0)).status("OK").build());
     }
 
     @Test
-    void buildsFullyEnrichedDraft() {
-        mockSber(REG_DT, UCP_DT, "40700111100000000001", "044525225", "30101810400000000225",
-                "ООО Плательщик", "7707083893", "773601001");
-        mockSber(REG_KT, UCP_KT, "40700222200000000002", "044030702", "30101810500000000653",
-                "ООО Получатель", "7800123456", "780001001");
+    void executedResultWhenPipelineSucceeds() {
+        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.of(sampleWalletTurn()));
+        mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "ООО Плательщик", "INN-1", "KPP-1");
+        mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "ООО Получатель", "INN-2", "KPP-2");
 
-        CreatePayment request = baseRequest(REG_DT, REG_KT, new BigDecimal("1500.00"));
+        CreatePaymentResponse response = library.execute(baseRequest(BCH_OP_1, CONTRACT_1));
 
-        CreatePaymentResponse response = library.execute(request);
-
-        assertThat(response.getResults()).hasSize(1);
-        WalletTurnResult result = response.getResults().get(0);
-        assertThat(result.getStatus()).isEqualTo(Status.DRAFT_CREATED);
-        assertThat(result.getStatusDesc()).isEqualTo("OK");
-
-        TurnDocdataDraft d = result.getTurnDocdata();
-        assertThat(d.getCcRegisterId()).isEqualTo(REG_DT);
-        assertThat(d.getCcWalletId()).isEqualTo("OWNER-DT");
-        assertThat(d.getCcOperationId()).isEqualTo(GEN_OPERATION_ID);
-        assertThat(d.getCcTransactionId()).isEqualTo(GEN_TX_ID);
-        assertThat(d.getCcRqUId()).isEqualTo(GEN_RQ_UID);
-        assertThat(d.getCcNum()).isEqualTo(GEN_DOC_NUM);
-
-        assertThat(d.getCcDTAcc()).isEqualTo("40700111100000000001");
-        assertThat(d.getCcDTBIC()).isEqualTo("044525225");
-        assertThat(d.getCcDTBankCorrAcc()).isEqualTo("30101810400000000225");
-        assertThat(d.getCcDTName()).isEqualTo("ООО Плательщик");
-        assertThat(d.getCcDTINN()).isEqualTo("7707083893");
-        assertThat(d.getCcDTKPP()).isEqualTo("773601001");
-        assertThat(d.getCcDTRegisterId()).isEqualTo(REG_DT);
-        assertThat(d.getCcDTNameBank())
-                .as("ccDTNameBank остаётся null, если BIC не нашёлся в справочнике")
-                .isNull();
-
-        assertThat(d.getCcKTAcc()).isEqualTo("40700222200000000002");
-        assertThat(d.getCcKTBIC()).isEqualTo("044030702");
-        assertThat(d.getCcKTBankCorrAcc()).isEqualTo("30101810500000000653");
-        assertThat(d.getCcKTName()).isEqualTo("ООО Получатель");
-        assertThat(d.getCcKTINN()).isEqualTo("7800123456");
-        assertThat(d.getCcKTKPP()).isEqualTo("780001001");
-        assertThat(d.getCcKTRegisterId()).isEqualTo(REG_KT);
-        assertThat(d.getCcKTNameBank())
-                .as("ccKTNameBank остаётся null, если BIC не нашёлся в справочнике")
-                .isNull();
+        assertThat(response.getExecutionResults()).hasSize(1);
+        ExecutionResult result = response.getExecutionResults().get(0);
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
+        assertThat(result.getStatusDescription()).isNull();
+        assertThat(result.getTransactionId()).isEqualTo(GEN_TX_ID);
+        assertThat(result.getOperationId()).isEqualTo(GEN_OPERATION_ID);
+        assertThat(result.getBchOperationId()).isEqualTo(BCH_OP_1);
+        assertThat(result.getContractId()).isEqualTo(CONTRACT_1);
     }
 
     @Test
-    void bankNamesFilledFromBicDirectory() {
-        mockSber(REG_DT, UCP_DT, "40700111100000000001", "044525225", "30101810400000000225",
-                "ООО Плательщик", "7707083893", "773601001");
-        mockSber(REG_KT, UCP_KT, "40700222200000000002", "044030702", "30101810500000000653",
-                "ООО Получатель", "7800123456", "780001001");
+    void failedWhenWalletTurnNotFound() {
+        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.empty());
 
-        when(sberClient.getBicDirectory(anyString())).thenReturn(directoryResult(Map.of(
-                "044525225", "ПАО Сбербанк",
-                "044030702", "АО Банк ПОЛУЧАТЕЛЬ"
-        )));
+        ExecutionResult result = library.execute(baseRequest(BCH_OP_1, CONTRACT_1))
+                .getExecutionResults().get(0);
 
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcDTNameBank()).isEqualTo("ПАО Сбербанк");
-        assertThat(d.getCcKTNameBank()).isEqualTo("АО Банк ПОЛУЧАТЕЛЬ");
-        assertThat(d.getCcContrNameBank())
-                .as("ccContrNameBank должен прийти из KT")
-                .isEqualTo("АО Банк ПОЛУЧАТЕЛЬ");
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
+        assertThat(result.getStatusDescription()).contains("WalletTurn not found");
+        assertThat(result.getBchOperationId()).isEqualTo(BCH_OP_1);
+        assertThat(result.getContractId()).isEqualTo(CONTRACT_1);
+        // transactionId/operationId не генерим, если lookup упал
+        assertThat(result.getTransactionId()).isNull();
+        assertThat(result.getOperationId()).isNull();
     }
 
     @Test
-    void sfsFillsBranchCodeAndCcDivisionId() {
-        mockSber(REG_DT, UCP_DT, "acc-dt", "044525225", "corr-dt", "DT", "i", "k",
-                "38903801697", "9038", "38");
-        mockSber(REG_KT, UCP_KT, "acc-kt", "044030702", "corr-kt", "KT", "i", "k",
-                "38903801679", "9039", "38");
+    void failedWhenBchOperationIdMissing() {
+        ExecutionResult result = library.execute(baseRequest(null, CONTRACT_1))
+                .getExecutionResults().get(0);
 
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcDivisionId()).isEqualTo("38903801697");
-        assertThat(d.getDtBranchCode()).isEqualTo("9038");
-        assertThat(d.getKtBranchCode()).isEqualTo("9039");
-        assertThat(d.getPacs008Xml()).contains("<BrnchId><Id>9038</Id></BrnchId>");
-        assertThat(d.getPacs008Xml()).contains("<BrnchId><Id>9039</Id></BrnchId>");
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
+        assertThat(result.getStatusDescription()).contains("ccBchOperationId");
     }
 
     @Test
-    void sfsFallsBackToCodeTbWhenCodeOsbMissing() {
-        mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "DT", "i", "k",
-                "38", null, "38");
-        mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "KT", "i", "k",
-                "38", null, "38");
+    void pgwFailureMarksItemFailedButPipelineContinues() {
+        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.of(sampleWalletTurn()));
+        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
+        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
+        when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
+                .thenThrow(new IllegalStateException("PGW unreachable"));
 
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0).getTurnDocdata();
+        ExecutionResult result = library.execute(baseRequest(BCH_OP_1, CONTRACT_1))
+                .getExecutionResults().get(0);
 
-        assertThat(d.getDtBranchCode()).isEqualTo("38");
-        assertThat(d.getKtBranchCode()).isEqualTo("38");
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
+        assertThat(result.getStatusDescription()).contains("PGW unreachable");
     }
 
     @Test
-    void pgwTransferUpdSentAfterPacs008WithCorrectFields() {
-        mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "DT", "i", "k");
-        mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "KT", "i", "k");
+    void batchMixesExecutedAndFailed() {
+        when(walletTurnRepository.findByBchOperationId("BCH-OK")).thenReturn(Optional.of(sampleWalletTurn()));
+        when(walletTurnRepository.findByBchOperationId("BCH-MISS")).thenReturn(Optional.empty());
+        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
+        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
+        when(idGenerator.transactionId()).thenReturn("tx-1", "tx-2");
+        when(idGenerator.operationId()).thenReturn("op-1", "op-2");
 
-        ArgumentCaptor<UPDDTO> updCaptor = ArgumentCaptor.forClass(UPDDTO.class);
-        ArgumentCaptor<String> reqIdCaptor = ArgumentCaptor.forClass(String.class);
-        when(pgwClient.transferUpd(reqIdCaptor.capture(), updCaptor.capture()))
-                .thenReturn(ApiResult.builder()
-                        .correlationId("CORR-1")
-                        .idempotencyKey("IDEMP-1")
-                        .status("OK")
-                        .build());
+        CreatePayment request = CreatePayment.builder()
+                .rqUID(UUID.randomUUID().toString())
+                .rqTm(LocalDateTime.now())
+                .version("2.0")
+                .walletTurns(List.of(
+                        WalletTurnInput.builder().ccBchOperationId("BCH-OK").ccContractId("C-1").build(),
+                        WalletTurnInput.builder().ccBchOperationId("BCH-MISS").ccContractId("C-2").build()))
+                .build();
 
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.TEN))
-                .getResults().get(0).getTurnDocdata();
+        List<ExecutionResult> results = library.execute(request).getExecutionResults();
 
-        assertThat(reqIdCaptor.getValue()).isEqualTo(GEN_RQ_UID);
+        assertThat(results).hasSize(2);
+        assertThat(results.get(0).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
+        assertThat(results.get(1).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
+    }
 
-        UPDDTO upd = updCaptor.getValue();
-        assertThat(upd.getUpdUID()).isEqualTo(GEN_OPERATION_ID);
-        assertThat(upd.getUpdType()).isEqualTo("pacs.008.001.08");
-        assertThat(upd.getSendModuleId()).isEqualTo("stmnt-giganetwork");
-        assertThat(upd.getSendServiceId()).isEqualTo(GEN_TX_ID);
-        assertThat(upd.getRcvModuleId()).isEqualTo("in-house-execution-payment");
-        assertThat(upd.getOriginalMessage()).contains("<MsgId>" + GEN_OPERATION_ID + "</MsgId>");
-        assertThat(upd.getMsgAttributes())
+    @Test
+    void upddtoCarriesPacs008AndCorrectAttributes() {
+        when(walletTurnRepository.findByBchOperationId(BCH_OP_1)).thenReturn(Optional.of(sampleWalletTurn()));
+        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
+        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
+        ArgumentCaptor<UPDDTO> upd = ArgumentCaptor.forClass(UPDDTO.class);
+        ArgumentCaptor<String> reqId = ArgumentCaptor.forClass(String.class);
+        when(pgwClient.transferUpd(reqId.capture(), upd.capture()))
+                .thenReturn(ApiResult.builder().correlationId("CORR-1").status("OK").build());
+
+        library.execute(baseRequest(BCH_OP_1, CONTRACT_1));
+
+        assertThat(reqId.getValue()).isEqualTo(GEN_RQ_UID);
+        UPDDTO u = upd.getValue();
+        assertThat(u.getUpdUID()).isEqualTo(GEN_OPERATION_ID);
+        assertThat(u.getUpdType()).isEqualTo("pacs.008.001.08");
+        assertThat(u.getSendModuleId()).isEqualTo("stmnt-giganetwork");
+        assertThat(u.getSendServiceId()).isEqualTo(GEN_TX_ID);
+        assertThat(u.getRcvModuleId()).isEqualTo("in-house-execution-payment");
+        assertThat(u.getMsgAttributes())
                 .containsEntry("ParentID", GEN_OPERATION_ID)
                 .containsEntry("registerId", REG_DT)
                 .containsEntry("execute_on_debit", "0")
                 .containsEntry("compress", "0");
-
-        assertThat(d.getPgwCorrelationId()).isEqualTo("CORR-1");
-        assertThat(d.getCcIdempotencyKey()).isEqualTo("IDEMP-1");
-    }
-
-    @Test
-    void pgwFailureMarksWalletTurnAsFailed() {
-        mockSber(REG_DT, UCP_DT, "acc", "bic", "corr", "n", "i", "k");
-        mockSber(REG_KT, UCP_KT, "acc", "bic", "corr", "n", "i", "k");
-
-        when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
-                .thenThrow(new IllegalStateException("PGW unreachable"));
-
-        WalletTurnResult result = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0);
-
-        assertThat(result.getStatus()).isEqualTo(WalletTurnResult.Status.FAILED);
-        assertThat(result.getStatusDesc()).contains("PGW unreachable");
-        assertThat(result.getTurnDocdata()).isNull();
-    }
-
-    @Test
-    void bankCorrAccFromDirectoryUsedAsFallback() {
-        GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
-        fskk.setAccNum("acc");
-        fskk.setAccBic("044525225");
-        fskk.setAccBankCorrAcc(null); // корсчёт не пришёл из FSKK
-        fskk.setUcpId("U-1");
-        GetSberIntegrationResult byRegister = new GetSberIntegrationResult();
-        byRegister.setFskk(fskk);
-        when(sberClient.getByRegisterId(eq(REG_DT), anyString())).thenReturn(byRegister);
-        when(sberClient.getByRegisterId(eq(REG_KT), anyString())).thenReturn(byRegister);
-        GetSberIntegrationResult.Epk epk = new GetSberIntegrationResult.Epk();
-        GetSberIntegrationResult byUcp = new GetSberIntegrationResult();
-        byUcp.setEpk(List.of(epk));
-        when(sberClient.getByUcpId(eq("U-1"), anyString())).thenReturn(byUcp);
-
-        Participant p = new Participant();
-        p.setBic("044525225");
-        p.setName("ПАО Сбербанк");
-        p.setCorrespondentAcc("30101810400000000225");
-        GetSberIntegrationResult dir = new GetSberIntegrationResult();
-        GetSberIntegrationResult.Nsi nsi = new GetSberIntegrationResult.Nsi();
-        nsi.setBicDirectory(true);
-        nsi.setParticipant(List.of(p));
-        dir.setNsi(nsi);
-        when(sberClient.getBicDirectory(anyString())).thenReturn(dir);
-
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcDTBankCorrAcc())
-                .as("если FSKK не отдал корсчёт, берём из справочника")
-                .isEqualTo("30101810400000000225");
-    }
-
-    @Test
-    void appliesConstantsAndDefaults() {
-        mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "name-dt", "inn-dt", "kpp-dt");
-        mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "name-kt", "inn-kt", "kpp-kt");
-
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.TEN))
-                .getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcPayStatus()).isEqualTo("DRAFT");
-        assertThat(d.getCcDT()).isEqualTo("1");
-        assertThat(d.getCcTypeOper()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(d.getCcTypeDoc()).isEqualTo("01");
-        assertThat(d.getCcPriority()).isEqualByComparingTo(new BigDecimal("5"));
-        assertThat(d.getCcSystemId()).isEqualTo("stmnt-giganetwork");
-        assertThat(d.getCcRateDT()).isEqualByComparingTo(BigDecimal.ONE);
-        assertThat(d.getCcRateKT()).isEqualByComparingTo(BigDecimal.ONE);
-        assertThat(d.getCcValutaDT()).isEqualTo("810");
-        assertThat(d.getCcValutaKT()).isEqualTo("810");
-        assertThat(d.getCcValutaTrans()).isEqualTo("810");
-        assertThat(d.getSysLastChangeDate()).isNotNull();
-    }
-
-    @Test
-    void sumsAreCopiedFromInput() {
-        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
-        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
-
-        BigDecimal sum = new BigDecimal("12345.67");
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, sum))
-                .getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcSum()).isEqualByComparingTo(sum);
-        assertThat(d.getCcSumNAT()).isEqualByComparingTo(sum);
-        assertThat(d.getCcSumPO()).isEqualByComparingTo(sum);
-        assertThat(d.getCcSumPL()).isEqualByComparingTo(sum);
-    }
-
-    @Test
-    void operationDayIsDateWithoutTime() {
-        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
-        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
-
-        LocalDateTime ts = LocalDateTime.of(2026, 4, 24, 1, 8, 3, 46_000_000);
-        CreatePayment request = baseRequest(REG_DT, REG_KT, BigDecimal.ONE);
-        request.getWalletTurns().get(0).setCcDate(ts);
-
-        TurnDocdataDraft d = library.execute(request).getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcDate()).isEqualTo(ts);
-        assertThat(d.getCcOperationDay()).isEqualTo(LocalDate.of(2026, 4, 24));
-    }
-
-    @Test
-    void contraFieldsTakenFromKtSide() {
-        mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "name-dt", "inn-dt", "kpp-dt");
-        mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "name-kt", "inn-kt", "kpp-kt");
-
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcContrName()).isEqualTo("name-kt");
-        assertThat(d.getCcContrINN()).isEqualTo("inn-kt");
-        assertThat(d.getCcContrKPP()).isEqualTo("kpp-kt");
-        assertThat(d.getCcContrAcc()).isEqualTo("acc-kt");
-        assertThat(d.getCcContrBIC()).isEqualTo("bic-kt");
-        assertThat(d.getCcContrBankCorrAcc()).isEqualTo("corr-kt");
-        assertThat(d.getCcContrRegisterId()).isEqualTo(REG_KT);
-        assertThat(d.getCcContrNameBank())
-                .as("без справочника банк-контрагент null")
-                .isNull();
-    }
-
-    @Test
-    void rqTmFallsBackToNowWhenRequestRqTmIsNull() {
-        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
-        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
-
-        CreatePayment request = baseRequest(REG_DT, REG_KT, BigDecimal.ONE);
-        request.setRqTm(null);
-
-        LocalDateTime before = LocalDateTime.now().minusSeconds(1);
-        TurnDocdataDraft d = library.execute(request).getResults().get(0).getTurnDocdata();
-        LocalDateTime after = LocalDateTime.now().plusSeconds(1);
-
-        assertThat(d.getCcRqTm()).isAfter(before).isBefore(after);
-    }
-
-    @Test
-    void rqTmTakenFromRequestWhenProvided() {
-        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
-        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
-
-        LocalDateTime requestRqTm = LocalDateTime.of(2024, 1, 1, 12, 0);
-        CreatePayment request = baseRequest(REG_DT, REG_KT, BigDecimal.ONE);
-        request.setRqTm(requestRqTm);
-
-        TurnDocdataDraft d = library.execute(request).getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcRqTm()).isEqualTo(requestRqTm);
-    }
-
-    @Test
-    void multipleWalletTurnsBuildIndependentDrafts() {
-        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
-        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
-
-        when(idGenerator.operationId())
-                .thenReturn("op1op1op1op1op1op1op1op1op1op101",
-                        "op2op2op2op2op2op2op2op2op2op202");
-        when(idGenerator.transactionId())
-                .thenReturn(UUID.randomUUID().toString(), UUID.randomUUID().toString());
-
-        CreatePayment request = baseRequest(REG_DT, REG_KT, BigDecimal.ONE);
-        WalletTurnInput second = baseWalletTurn(REG_DT, REG_KT, BigDecimal.TEN);
-        second.setCcBchOperationId("BCH-2");
-        request.setWalletTurns(List.of(request.getWalletTurns().get(0), second));
-
-        CreatePaymentResponse response = library.execute(request);
-
-        assertThat(response.getResults()).hasSize(2);
-        assertThat(response.getResults().get(0).getTurnDocdata().getCcOperationId())
-                .isNotEqualTo(response.getResults().get(1).getTurnDocdata().getCcOperationId());
-        assertThat(response.getStatusCode()).isZero();
-    }
-
-    @Test
-    void missingRegisterDtMarksWalletTurnAsFailed() {
-        CreatePayment request = baseRequest(null, REG_KT, BigDecimal.ONE);
-
-        WalletTurnResult result = library.execute(request).getResults().get(0);
-
-        assertThat(result.getStatus()).isEqualTo(Status.FAILED);
-        assertThat(result.getStatusDesc()).contains("ccRegisterDt");
-        assertThat(result.getTurnDocdata()).isNull();
-    }
-
-    @Test
-    void sberRegisterReturningNullKeepsPartyFieldsEmpty() {
-        when(sberClient.getByRegisterId(eq(REG_DT), anyString())).thenReturn(null);
-        when(sberClient.getByRegisterId(eq(REG_KT), anyString())).thenReturn(null);
-
-        WalletTurnResult result = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0);
-
-        assertThat(result.getStatus()).isEqualTo(Status.DRAFT_CREATED);
-        TurnDocdataDraft d = result.getTurnDocdata();
-        assertThat(d.getCcDTAcc()).isNull();
-        assertThat(d.getCcDTName()).isNull();
-        assertThat(d.getCcKTAcc()).isNull();
-        assertThat(d.getCcContrName()).isNull();
-        assertThat(d.getCcRegisterId()).isEqualTo(REG_DT);
-        verify(sberClient, never()).getByUcpId(anyString(), anyString());
-    }
-
-    @Test
-    void fskkWithoutUcpIdSkipsEpkCall() {
-        GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
-        fskk.setAccNum("only-acc");
-        GetSberIntegrationResult res = new GetSberIntegrationResult();
-        res.setFskk(fskk);
-        when(sberClient.getByRegisterId(eq(REG_DT), anyString())).thenReturn(res);
-        when(sberClient.getByRegisterId(eq(REG_KT), anyString())).thenReturn(res);
-
-        TurnDocdataDraft d = library.execute(baseRequest(REG_DT, REG_KT, BigDecimal.ONE))
-                .getResults().get(0).getTurnDocdata();
-
-        assertThat(d.getCcDTAcc()).isEqualTo("only-acc");
-        assertThat(d.getCcDTName()).isNull();
-        verify(sberClient, never()).getByUcpId(anyString(), anyString());
-    }
-
-    @Test
-    void responseSummaryReflectsFailedCount() {
-        when(sberClient.getByRegisterId(anyString(), anyString())).thenReturn(null);
-
-        WalletTurnInput goodWt = baseWalletTurn(REG_DT, REG_KT, BigDecimal.ONE);
-        WalletTurnInput badWt = baseWalletTurn(null, REG_KT, BigDecimal.ONE);
-        CreatePayment request = CreatePayment.builder()
-                .rqUID(UUID.randomUUID().toString())
-                .rqTm(LocalDateTime.now())
-                .walletTurns(List.of(goodWt, badWt))
-                .build();
-
-        CreatePaymentResponse response = library.execute(request);
-
-        assertThat(response.getStatusCode()).isZero();
-        assertThat(response.getStatusDesc()).isEqualTo("Created drafts: 1, failed: 1");
+        assertThat(u.getOriginalMessage()).contains("<MsgId>" + GEN_OPERATION_ID + "</MsgId>");
     }
 
     // ---------- helpers ----------
@@ -464,19 +186,11 @@ class CreatePaymentLibraryTest {
     private void mockSber(String registerId, String ucpId,
                           String accNum, String bic, String corrAcc,
                           String orgName, String inn, String kpp) {
-        mockSber(registerId, ucpId, accNum, bic, corrAcc, orgName, inn, kpp, null, null, null);
-    }
-
-    private void mockSber(String registerId, String ucpId,
-                          String accNum, String bic, String corrAcc,
-                          String orgName, String inn, String kpp,
-                          String divisionId, String codeOSB, String codeTB) {
         GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
         fskk.setAccNum(accNum);
         fskk.setAccBic(bic);
         fskk.setAccBankCorrAcc(corrAcc);
         fskk.setUcpId(ucpId);
-        fskk.setDivisionId(divisionId);
         GetSberIntegrationResult byReg = new GetSberIntegrationResult();
         byReg.setFskk(fskk);
         when(sberClient.getByRegisterId(eq(registerId), anyString())).thenReturn(byReg);
@@ -488,30 +202,9 @@ class CreatePaymentLibraryTest {
         GetSberIntegrationResult byUcp = new GetSberIntegrationResult();
         byUcp.setEpk(List.of(epk));
         when(sberClient.getByUcpId(eq(ucpId), anyString())).thenReturn(byUcp);
-
-        if (divisionId != null) {
-            GetSberIntegrationResult.Sfs sfs = new GetSberIntegrationResult.Sfs();
-            sfs.setDivisionId(divisionId);
-            sfs.setCodeOSB(codeOSB);
-            sfs.setCodeTB(codeTB);
-            GetSberIntegrationResult byDiv = new GetSberIntegrationResult();
-            byDiv.setSfs(List.of(sfs));
-            // lenient — в кейсе общего divisionId DT+KT кеш сделает только 1 вызов,
-            // второй stub переопределит первый и без lenient Mockito бы ругнулся.
-            lenient().when(sberClient.getByDivisionId(eq(divisionId), anyString())).thenReturn(byDiv);
-        }
     }
 
-    private CreatePayment baseRequest(String registerDt, String registerKt, BigDecimal sum) {
-        return CreatePayment.builder()
-                .rqUID(UUID.randomUUID().toString())
-                .rqTm(LocalDateTime.of(2026, 4, 24, 1, 8, 3))
-                .version("1.0")
-                .walletTurns(List.of(baseWalletTurn(registerDt, registerKt, sum)))
-                .build();
-    }
-
-    private GetSberIntegrationResult emptyDirectoryResult() {
+    private GetSberIntegrationResult emptyDirectory() {
         GetSberIntegrationResult res = new GetSberIntegrationResult();
         GetSberIntegrationResult.Nsi nsi = new GetSberIntegrationResult.Nsi();
         nsi.setBicDirectory(true);
@@ -520,35 +213,30 @@ class CreatePaymentLibraryTest {
         return res;
     }
 
-    private GetSberIntegrationResult directoryResult(Map<String, String> bicToName) {
-        java.util.List<Participant> ps = new java.util.ArrayList<>();
-        bicToName.forEach((bic, name) -> {
-            Participant p = new Participant();
-            p.setBic(bic);
-            p.setName(name);
-            p.setCorrespondentAcc("30101810000000000" + bic.substring(Math.max(0, bic.length() - 3)));
-            ps.add(p);
-        });
-        GetSberIntegrationResult res = new GetSberIntegrationResult();
-        GetSberIntegrationResult.Nsi nsi = new GetSberIntegrationResult.Nsi();
-        nsi.setBicDirectory(true);
-        nsi.setParticipant(ps);
-        res.setNsi(nsi);
-        return res;
+    private CreatePayment baseRequest(String bchOpId, String contractId) {
+        return CreatePayment.builder()
+                .rqUID(UUID.randomUUID().toString())
+                .rqTm(LocalDateTime.of(2026, 5, 11, 18, 0))
+                .version("2.0")
+                .walletTurns(List.of(WalletTurnInput.builder()
+                        .ccBchOperationId(bchOpId)
+                        .ccContractId(contractId)
+                        .build()))
+                .build();
     }
 
-    private WalletTurnInput baseWalletTurn(String registerDt, String registerKt, BigDecimal sum) {
-        return WalletTurnInput.builder()
-                .ccBchOperationId("BCH-1")
-                .ccContractId("CONTRACT-1")
+    private WalletTurn sampleWalletTurn() {
+        return WalletTurn.builder()
+                .ccBchOperationId(BCH_OP_1)
+                .ccContractId(CONTRACT_1)
                 .ccOwnerDt("OWNER-DT")
-                .ccRegisterDt(registerDt)
+                .ccRegisterDt(REG_DT)
                 .ccOwnerKt("OWNER-KT")
-                .ccRegisterKt(registerKt)
-                .ccDate(LocalDateTime.of(2026, 4, 24, 1, 8, 3))
-                .ccDateDoc(LocalDateTime.of(2026, 4, 24, 0, 0))
-                .ccSum(sum)
-                .ccPurpose("За товары по договору №1")
+                .ccRegisterKt(REG_KT)
+                .ccDate(LocalDateTime.of(2026, 5, 11, 10, 0))
+                .ccDateDoc(LocalDateTime.of(2021, 10, 4, 11, 42, 28))
+                .ccSum(new BigDecimal("1500.00"))
+                .ccPurpose("Test payment")
                 .build();
     }
 }

@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model model-name="modulex" version="DEV-SNAPSHOT" table-prefix="MODULEX" component-code="11111111-1111-1111-1111-111111111111">
+    <import type="HISTORY-VERSION" file=""/>
+
+    <class name="RegisterWallet" label="register_wallet. Регистр кошелька">
+        <!-- НОВЫЕ ПОЛЯ (mandatory снят, оставлен только на ранее существовавших ccRegisterId/ccCurrency) -->
+        <property name="ccOwnerId" type="String" length="512" label="TokenOwner кошелька в blockchain"/>
+        <property name="ccMemberId" type="String" length="128" label="memberId участника"/>
+        <property name="ccRegisterId" type="String" length="100" mandatory="true" label="Идентификатор регистра в ФСКК"/>
+        <property name="ccCurrency" type="String" length="3" mandatory="true" label="Цифровой код валюты регистра"/>
+        <property name="ccAccNum" type="String" length="32" label="Номер счета"/>
+        <property name="ccName" type="String" length="1000" label="Наименование счета"/>
+        <property name="ccAccBIC" type="String" length="9" label="БИК банка"/>
+        <property name="ccNameBank" type="String" length="1000" label="Наименование банка"/>
+        <property name="ccBankCorrAcc" type="String" length="32" label="Корсчет банка"/>
+        <property name="ccInn" type="String" length="32" label="ИНН клиента"/>
+        <property name="ccKpp" type="String" length="32" label="КПП клиента"/>
+        <property name="ccOpenDate" type="LocalDate" label="Дата открытия счета"/>
+        <property name="ccCloseDate" type="LocalDate" label="Дата закрытия счета"/>
+        <property name="ccSigningPublic" type="String" length="2000" label="Публичный ключ подписи"/>
+        <property name="ccEncryptionPublic" type="String" length="2000" label="Публичный ключ шифрования"/>
+        <property name="ccAccessPublic" type="String" length="2000" label="Публичный ключ доступа"/>
+        <property name="ccMaxDealAmount" type="BigDecimal" length="17" scale="2" label="Максимальная сумма сделки"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <!-- DEPRECATED ПОЛЯ -->
+        <property name="ccUcpId" type="String" length="254" isDeprecated="true" label="Идентификатор клиента в ЕПК (deprecated)"/>
+        <property name="ccWalletId" type="String" length="254" isDeprecated="true" label="Идентификатор кошелька в Blockchain (deprecated)"/>
+        <property name="ccDigitalId" type="String" length="254" isDeprecated="true" label="Идентификатор клиента в ЕФС (deprecated)"/>
+        <property name="ccRegisterPurpose" type="String" length="1000" isDeprecated="true" label="Целевое назначение счета (deprecated)"/>
+        <property name="ccRegisterPurposeCode" type="String" length="128" isDeprecated="true" label="Целевое назначение счета кодовое (deprecated)"/>
+        <property name="division" type="String" length="128" isDeprecated="true" label="ID подразделения (deprecated)"/>
+        <property name="ccRqTm" type="Date" isDeprecated="true" label="RqTm (deprecated)"/>
+        <property name="ccRqUId" type="String" length="128" isDeprecated="true" label="RqUId (deprecated)"/>
+        <property name="systemId" type="String" length="254" isDeprecated="true" label="Система источник данных (deprecated)"/>
+        <property name="ccZpif" type="Boolean" isDeprecated="true" label="Признак ЗПИФ (deprecated)"/>
+
+        <index unique="true">
+            <property name="ccRegisterId"/>
+        </index>
+        <index unique="false">
+            <property name="ccOwnerId"/>
+        </index>
+        <index unique="false">
+            <property name="ccMemberId"/>
+        </index>
+        <index unique="false">
+            <property name="ccAccNum"/>
+        </index>
+        <index unique="false">
+            <property name="ccInn"/>
+            <property name="ccKpp"/>
+        </index>
+    </class>
+
+    <class name="TurnDocdata" label="turn_docdata. Данные документа оборота">
+        <property name="ccRegisterId" type="String" length="100" mandatory="true" label="Счет"/>
+        <property name="ccWalletId" type="String" length="254" label="Идентификатор кошелька"/>
+        <property name="ccDate" type="LocalDateTime" mandatory="true" label="Дата исполнения операции"/>
+        <property name="ccOperationId" type="String" length="128" mandatory="true" label="DOCGUID"/>
+        <property name="ccWalletTurnId" type="String" length="128" label="Идентификатор платежа в кошельке"/>
+        <property name="ccTransactionId" type="String" length="128" mandatory="true" label="Id сервиса AE"/>
+        <property name="ccContractId" type="String" length="128" label="Идентификатор сделки (смарт-контракта)"/>
+        <property name="ccPayStatus" type="String" length="64" mandatory="true" label="Статус платежа"/>
+        <property name="ccDT" type="String" length="1" label="Признак дебетового оборота"/>
+        <property name="ccStartSum" type="BigDecimal" length="17" scale="2" label="Входящая сумма"/>
+        <property name="ccStartSumNAT" type="BigDecimal" length="17" scale="2" label="Входящая сумма рубли"/>
+        <property name="ccSum" type="BigDecimal" length="17" scale="2" mandatory="true" label="Сумма оборота"/>
+        <property name="ccSumNAT" type="BigDecimal" length="17" scale="2" mandatory="true" label="Сумма оборота в рублях"/>
+        <property name="ccTypeOper" type="BigDecimal" length="32" scale="0" label="Тип операции"/>
+        <property name="ccRqTm" type="Date" label="RqTm"/>
+        <property name="ccRqUId" type="String" length="128" label="RqUId"/>
+        <property name="ccOperationDay" type="LocalDate" mandatory="true" label="Дата операционного дня"/>
+
+        <property name="ccTypeDoc" type="String" length="32" label="Шифр платежного документа"/>
+        <property name="ccNum" type="String" length="32" mandatory="true" label="Номер документа"/>
+        <property name="ccDateDoc" type="LocalDateTime" label="Дата документа"/>
+        <property name="ccPurpose" type="String" length="4000" mandatory="true" label="Назначение платежа"/>
+        <property name="ccPurposeCode" type="String" length="128" label="Код назначения платежа"/>
+
+        <property name="ccDTName" type="String" length="1000" label="Наименование клиента плательщика"/>
+        <property name="ccDTINN" type="String" length="32" label="ИНН клиента плательщика"/>
+        <property name="ccDTKPP" type="String" length="32" label="КПП клиента плательщика"/>
+        <property name="ccDTAcc" type="String" length="32" label="Номер счета плательщика"/>
+        <property name="ccDTBIC" type="String" length="9" label="БИК счета плательщика"/>
+        <property name="ccDTNameBank" type="String" length="1000" label="Наименование банка плательщика"/>
+        <property name="ccDTBankCorrAcc" type="String" length="32" label="Корсчет банка плательщика"/>
+        <property name="ccDTRegisterId" type="String" length="128" label="ID регистр счета плательщика"/>
+
+        <property name="ccKTName" type="String" length="1000" label="Наименование клиента получателя"/>
+        <property name="ccKTINN" type="String" length="32" label="ИНН клиента получателя"/>
+        <property name="ccKTKPP" type="String" length="32" label="КПП клиента получателя"/>
+        <property name="ccKTAcc" type="String" length="32" label="Номер счета получателя"/>
+        <property name="ccKTBIC" type="String" length="9" label="БИК счета получателя"/>
+        <property name="ccKTNameBank" type="String" length="1000" label="Наименование банка получателя"/>
+        <property name="ccKTBankCorrAcc" type="String" length="32" label="Корсчет банка получателя"/>
+        <property name="ccKTRegisterId" type="String" length="128" label="ID регистр счета получателя"/>
+
+        <property name="ccContrName" type="String" length="1000" label="Наименование клиента контрагента"/>
+        <property name="ccContrINN" type="String" length="32" label="ИНН клиента контрагента"/>
+        <property name="ccContrKPP" type="String" length="32" label="КПП клиента контрагента"/>
+        <property name="ccContrAcc" type="String" length="32" label="Номер счета контрагента"/>
+        <property name="ccContrBIC" type="String" length="9" label="БИК счета контрагента"/>
+        <property name="ccContrNameBank" type="String" length="1000" label="Наименование банка контрагента"/>
+        <property name="ccContrBankCorrAcc" type="String" length="32" label="Корсчет банка контрагента"/>
+        <property name="ccContrRegisterId" type="String" length="128" label="ID регистр счета контрагента"/>
+
+        <property name="ccRateDT" type="BigDecimal" length="17" scale="6" label="Курс валюты плательщика"/>
+        <property name="ccRateKT" type="BigDecimal" length="17" scale="6" label="Курс валюты получателя"/>
+        <property name="ccValutaDT" type="String" length="3" label="Валюта по Дт"/>
+        <property name="ccValutaKT" type="String" length="3" label="Валюта по Кт"/>
+        <property name="ccValutaTrans" type="String" length="3" label="Валюта операции"/>
+        <property name="ccSumPO" type="BigDecimal" length="17" scale="2" mandatory="true" label="Сумма получателя"/>
+        <property name="ccSumPL" type="BigDecimal" length="17" scale="2" label="Сумма плательщика"/>
+        <property name="ccPriority" type="BigDecimal" length="32" scale="0" mandatory="true" label="Очередность платежа"/>
+        <property name="ccDeliveryKind" type="String" length="32" label="Вид пересылки документа"/>
+        <property name="ccVoCode" type="String" length="32" label="Код вида валютной операции"/>
+        <property name="ccPayingCondition" type="String" length="2001" label="Условие оплаты"/>
+        <property name="ccPayingConditionDate" type="LocalDateTime" label="Срок для акцепта"/>
+        <property name="ccIncomeTypeCode" type="String" length="128" label="Код вида дохода"/>
+        <property name="ccUip" type="String" length="32" label="УИН"/>
+        <property name="ccUPNO" type="String" length="128" label="УПНО"/>
+
+        <property name="ccDrawerStatus101" type="String" length="32" label="Статус налогоплательщика (101)"/>
+        <property name="ccKbk" type="String" length="32" label="КБК (104)"/>
+        <property name="ccOktmo" type="String" length="32" label="ОКТМО (105)"/>
+        <property name="ccReasonCode106" type="String" length="32" label="Основание платежа (106)"/>
+        <property name="ccTaxPeriod107" type="String" length="32" label="Налоговый период (107)"/>
+        <property name="ccDocNumber108" type="String" length="32" label="Номер налогового документа (108)"/>
+        <property name="ccDocDate109" type="String" length="32" label="Дата налогового документа (109)"/>
+        <property name="ccPaymentKind110" type="String" length="32" label="Код выплат (110)"/>
+
+        <property name="ccSystemId" type="String" length="128" label="Идентификатор системы поставщика"/>
+        <property name="ccReceiptDate" type="LocalDateTime" label="Дата поступления в банк плательщика"/>
+        <property name="ccDivisionId" type="String" length="128" label="Id в НСИ"/>
+        <property name="ccKindDoc" type="String" length="128" label="Код документа"/>
+        <property name="ccDocTypeCode" type="String" length="128" label="Канал получения"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccTransactionId"/>
+        </index>
+        <index unique="false">
+            <property name="ccRegisterId"/>
+            <property name="ccTransactionId"/>
+        </index>
+        <index unique="false">
+            <property name="ccRegisterId"/>
+            <property name="ccOperationDay"/>
+        </index>
+        <index unique="false">
+            <property name="ccWalletId"/>
+            <property name="ccDate"/>
+        </index>
+        <index unique="false">
+            <property name="ccOperationId"/>
+        </index>
+        <index unique="false">
+            <property name="ccWalletTurnId"/>
+        </index>
+        <index unique="false">
+            <property name="ccContractId"/>
+        </index>
+    </class>
+
+    <class name="WalletTurn" label="walletTurn. Оборот кошелька">
+        <!-- НОВЫЕ ПОЛЯ (все без mandatory) -->
+        <property name="ccDate" type="LocalDateTime" label="Дата и время операции из blockchain"/>
+        <property name="ccBchOperationId" type="String" length="128" label="Идентификатор операции blockchain"/>
+        <property name="ccTxId" type="String" length="128" label="Идентификатор blockchain-транзакции"/>
+        <property name="ccBlockNumber" type="Long" label="Номер блока транзакции"/>
+        <property name="ccContractId" type="String" length="128" label="Идентификатор smart contract"/>
+        <property name="ccOwnerDt" type="String" length="512" label="Кошелек списания"/>
+        <property name="ccRegisterDt" type="String" length="100" label="Регистр списания"/>
+        <property name="ccOwnerKt" type="String" length="512" label="Кошелек зачисления"/>
+        <property name="ccRegisterKt" type="String" length="100" label="Регистр зачисления"/>
+        <property name="ccSum" type="BigDecimal" length="17" scale="2" label="Сумма платежа"/>
+        <property name="ccDateDoc" type="LocalDateTime" label="Дата документа"/>
+        <property name="ccPurpose" type="String" length="4000" label="Назначение платежа"/>
+        <property name="ccOperationId" type="String" length="128" label="DOCGUID банковского документа"/>
+        <property name="ccTransactionId" type="String" length="128" label="serviceObjectId"/>
+        <property name="ccRqTm" type="Date" label="RqTm"/>
+        <property name="ccRqUId" type="String" length="128" label="RqUId"/>
+        <property name="ccSignature" type="String" length="2000" label="Подпись транзакции в блокчейн"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <!-- DEPRECATED ПОЛЯ -->
+        <property name="ccWalletTurnId" type="String" length="128" isDeprecated="true" label="Идентификатор платежа в кошельке (deprecated)"/>
+        <property name="ccWalletDt" type="String" length="254" isDeprecated="true" label="Кошелек по Дт (deprecated)"/>
+        <property name="ccWalletKt" type="String" length="254" isDeprecated="true" label="Кошелек по Кт (deprecated)"/>
+
+        <index unique="true">
+            <property name="ccBchOperationId"/>
+        </index>
+        <index unique="true">
+            <property name="ccTxId"/>
+        </index>
+        <index unique="false">
+            <property name="ccBchOperationId"/>
+            <property name="ccContractId"/>
+        </index>
+        <index unique="false">
+            <property name="ccOwnerDt"/>
+        </index>
+        <index unique="false">
+            <property name="ccOwnerKt"/>
+        </index>
+        <index unique="false">
+            <property name="ccRegisterDt"/>
+            <property name="ccRegisterKt"/>
+        </index>
+        <index unique="false">
+            <property name="ccOperationId"/>
+        </index>
+        <index unique="false">
+            <property name="ccContractId"/>
+        </index>
+        <index unique="false">
+            <property name="ccBlockNumber"/>
+        </index>
+    </class>
+
+    <class name="StatusWalletTurn" label="status_WalletTurn. Статус оборота кошелька">
+        <!-- НОВЫЕ ПОЛЯ -->
+        <property name="ccWalletTurnObjectId" type="String" length="128" mandatory="true" label="Внешний идентификатор платежа в blockchain"/>
+        <property name="ccOperationId" type="String" length="128" label="DOCGUID банковского документа"/>
+        <property name="ccTransactionId" type="String" length="128" label="serviceObjectId"/>
+        <property name="ccStatus" type="String" length="64" mandatory="true" label="Статус платежа из blockchain в банковском процессе"/>
+        <property name="ccStatusCode" type="String" length="128" label="Код ошибки"/>
+        <property name="ccStatusDesc" type="String" length="4000" label="Описание статуса или ошибки"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" mandatory="true" label="Дата последнего изменения записи"/>
+
+        <!-- DEPRECATED ПОЛЯ -->
+        <property name="ccWalletTurnId" type="String" length="128" isDeprecated="true" label="Идентификатор платежа в кошельке (deprecated)"/>
+        <property name="ccRqTm" type="Date" isDeprecated="true" label="RqTm (deprecated)"/>
+        <property name="ccRqUId" type="String" length="128" isDeprecated="true" label="RqUId (deprecated)"/>
+
+        <index unique="true">
+            <property name="ccWalletTurnObjectId"/>
+            <property name="ccStatus"/>
+        </index>
+        <index unique="false">
+            <property name="ccWalletTurnObjectId"/>
+        </index>
+        <index unique="false">
+            <property name="ccOperationId"/>
+        </index>
+        <index unique="false">
+            <property name="ccTransactionId"/>
+        </index>
+        <index unique="false">
+            <property name="ccStatus"/>
+        </index>
+    </class>
+
+    <class name="BlockOffset" label="block_offset. Техническая таблица последовательной обработки блоков">
+        <property name="ccCurrentBlock" type="Integer" mandatory="true" label="Номер текущего блока в обработке"/>
+        <property name="ccStatus" type="String" length="30" mandatory="true" label="Статус записи"/>
+        <property name="ccCreated" type="LocalDateTime" mandatory="true" label="Дата создания записи"/>
+        <property name="ccModified" type="LocalDateTime" mandatory="true" label="Дата редактирования записи"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="false">
+            <property name="ccStatus"/>
+        </index>
+        <index unique="false">
+            <property name="ccCurrentBlock"/>
+        </index>
+    </class>
+
+    <!-- DEPRECATED класс, заменён на Block -->
+    <class name="Blocks" label="blocks. Обработанные блоки (deprecated)" isDeprecated="true">
+        <property name="ccLastProcessedBlockNumber" type="String" length="64" mandatory="true" label="Номер последнего обработанного блока"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="false">
+            <property name="ccLastProcessedBlockNumber"/>
+        </index>
+    </class>
+
+    <class name="Block" label="block. Блок blockchain">
+        <property name="ccBlockId" type="Long" mandatory="true" label="Номер блока blockchain"/>
+        <property name="ccHasTransaction" type="Boolean" label="Признак наличия транзакций в блоке"/>
+        <property name="ccCreated" type="LocalDateTime" mandatory="true" label="Дата создания"/>
+        <property name="ccModified" type="LocalDateTime" mandatory="true" label="Дата редактирования"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccBlockId"/>
+        </index>
+        <index unique="false">
+            <property name="ccHasTransaction"/>
+        </index>
+    </class>
+
+    <class name="DataFeed" label="dataFeed. Типы выпущенных фидов">
+        <property name="ccFeedId" type="String" length="128" mandatory="true" label="Идентификатор фида"/>
+        <property name="ccDate" type="LocalDateTime" label="Дата и время регистрации фида"/>
+        <property name="ccName" type="String" length="255" label="Наименование типа фида"/>
+        <property name="ccDescription" type="String" length="1000" label="Описание фида"/>
+        <property name="ccFields" type="String" length="4000" label="Параметры фида (JSON)"/>
+        <property name="ccStatus" type="String" length="64" label="Статус фида"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccFeedId"/>
+        </index>
+        <index unique="false">
+            <property name="ccStatus"/>
+        </index>
+    </class>
+
+    <class name="DataFeedValue" label="dataFeedValue. Публикации значений фидов">
+        <property name="ccFeedId" type="String" length="128" mandatory="true" label="Идентификатор фида"/>
+        <property name="ccDate" type="LocalDateTime" label="Дата создания записи"/>
+        <property name="ccTxId" type="String" length="128" label="txId blockchain-транзакции"/>
+        <property name="ccOperationId" type="String" length="128" label="operationId из bch"/>
+        <property name="ccOperation" type="String" length="128" label="Название операции blockchain"/>
+        <property name="ccBlockNumber" type="String" length="64" label="Номер блока публикации"/>
+        <property name="ccWalletTurnId" type="String" length="128" label="Ссылка на исходный walletTurn"/>
+        <property name="ccBchOperationId" type="String" length="128" label="Идентификатор исходной операции blockchain"/>
+        <property name="ccFields" type="String" length="4000" label="Полный массив content[] (jsonb)"/>
+        <property name="ccOwnerMemberId" type="String" length="128" label="memberId банка"/>
+        <property name="ccStatus" type="String" length="64" mandatory="true" label="Статус публикации"/>
+        <property name="ccErrorText" type="String" length="4000" label="Текст ошибки публикации"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Дата последнего изменения"/>
+
+        <index unique="false">
+            <property name="ccFeedId"/>
+        </index>
+        <index unique="false">
+            <property name="ccTxId"/>
+        </index>
+        <index unique="false">
+            <property name="ccBchOperationId"/>
+        </index>
+        <index unique="false">
+            <property name="ccWalletTurnId"/>
+        </index>
+        <index unique="false">
+            <property name="ccOperationId"/>
+        </index>
+        <index unique="false">
+            <property name="ccStatus"/>
+        </index>
+    </class>
+
+    <class name="TokenType" label="token_type. Типы выпущенных токенов">
+        <property name="ccTokenTypeId" type="String" length="128" mandatory="true" label="Идентификатор типа токена"/>
+        <property name="ccDateTokenType" type="LocalDateTime" label="Дата создания типа токена"/>
+        <property name="ccNameTokenType" type="String" length="255" label="Наименование типа токена"/>
+        <property name="ccDescriptionTokenType" type="String" length="1000" label="Описание типа токена"/>
+        <property name="ccFieldsId0" type="String" length="128" label="amount — параметр суммы контракта"/>
+        <property name="ccFieldsId1" type="String" length="128" label="contractId — идентификатор контракта"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccTokenTypeId"/>
+        </index>
+        <index unique="false">
+            <property name="ccNameTokenType"/>
+        </index>
+    </class>
+
+    <class name="BchToken" label="bch_token. Выпущенные токены">
+        <property name="ccTokenId" type="String" length="128" mandatory="true" label="Идентификатор токена"/>
+        <property name="ccTokenTypeId" type="String" length="128" label="Тип токена"/>
+        <property name="ccDateToken" type="LocalDateTime" label="Дата создания токена"/>
+        <property name="ccNameToken" type="String" length="255" label="Наименование токена"/>
+        <property name="ccDescriptionToken" type="String" length="4000" label="Описание токена"/>
+        <property name="ccFieldsId0" type="BigDecimal" length="17" scale="2" label="Amount"/>
+        <property name="ccFieldsId1" type="String" length="128" label="contractId"/>
+        <property name="ccDnaEmission" type="String" length="64" label="emission-controlled-by-issuer"/>
+        <property name="ccDnaTransfer" type="String" length="64" label="require-owner-signature-for-transfer"/>
+        <property name="ccDnaBurn" type="String" length="64" label="Разрешение на сжигание"/>
+        <property name="ccDnaChange" type="String" length="64" label="fungible"/>
+        <property name="ccRegulationId" type="String" length="128" label="Идентификатор банка-регулятора"/>
+        <property name="ccTokenOwner" type="String" length="512" label="Текущий владелец токена"/>
+        <property name="ccTokenOwnerMemberId" type="String" length="128" label="Идентификатор текущего владельца"/>
+        <property name="ccPreviousOwner" type="String" length="512" label="Предыдущий владелец токена"/>
+        <property name="ccPreviousOwnerMemberId" type="String" length="128" label="Идентификатор предыдущего владельца"/>
+        <property name="ccEventDate" type="LocalDateTime" label="Дата последнего события"/>
+        <property name="ccEventMemberId" type="String" length="128" label="Идентификатор инициатора события"/>
+        <property name="ccTxId" type="String" length="128" mandatory="true" label="ID транзакции последнего события"/>
+        <property name="ccBlockNumber" type="String" length="64" label="Номер блока последнего события"/>
+        <property name="ccDateBurn" type="LocalDateTime" label="Дата сжигания токена"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccTokenId"/>
+        </index>
+        <index unique="false">
+            <property name="ccTokenTypeId"/>
+        </index>
+        <index unique="false">
+            <property name="ccFieldsId1"/>
+        </index>
+        <index unique="false">
+            <property name="ccTokenOwner"/>
+        </index>
+        <index unique="false">
+            <property name="ccTokenOwnerMemberId"/>
+        </index>
+        <index unique="false">
+            <property name="ccPreviousOwnerMemberId"/>
+        </index>
+        <index unique="false">
+            <property name="ccTxId"/>
+        </index>
+        <index unique="false">
+            <property name="ccBlockNumber"/>
+        </index>
+        <index unique="false">
+            <property name="ccRegulationId"/>
+        </index>
+    </class>
+</model>

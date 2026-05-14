@@ -8,15 +8,18 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * Тело результата JSON-RPC метода {@code execute} (имя верхнего ключа в спеке —
+ * {@code executionResult}).
+ */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class CreatePaymentResponse {
-
-    private String rqUID;
     private LocalDateTime rqTm;
-    private int statusCode;
-    private String statusDesc;
-    private List<WalletTurnResult> results;
+    private String rqUID;
+    private String version;
+    /** Результаты по каждой walletTurn из запроса. */
+    private List<ExecutionResult> executionResults;
 }

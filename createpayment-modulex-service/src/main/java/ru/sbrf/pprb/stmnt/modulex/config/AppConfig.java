@@ -19,6 +19,7 @@ import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
 import ru.sbrf.pprb.stmnt.modulex.lib.Pacs008Builder;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataIdGenerator;
+import ru.sbrf.pprb.stmnt.modulex.lib.WalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.time.Duration;
@@ -92,8 +93,9 @@ public class AppConfig {
                                                      SberIntegrationClient sberIntegrationClient,
                                                      TurnDocdataIdGenerator idGenerator,
                                                      Pacs008Builder pacs008Builder,
-                                                     PgwClient pgwClient) {
+                                                     PgwClient pgwClient,
+                                                     WalletTurnRepository walletTurnRepository) {
         return new CreatePaymentLibrary(simpleValidator, sberIntegrationClient, idGenerator,
-                pacs008Builder, pgwClient);
+                pacs008Builder, pgwClient, walletTurnRepository);
     }
 }

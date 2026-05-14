@@ -6,11 +6,17 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Primary;
+import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.UPDDTO;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult;
+import ru.sbrf.pprb.stmnt.modulex.lib.WalletTurnRepository;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 import java.util.List;
 
@@ -92,6 +98,24 @@ public class Application {
                 return result;
             }
         };
+    }
+
+    /** Заглушка walletTurn-репозитория — всегда возвращает синтетический оборот. */
+    @Bean
+    @Primary
+    public WalletTurnRepository stubWalletTurnRepository() {
+        return ccBchOperationId -> Optional.of(WalletTurn.builder()
+                .ccBchOperationId(ccBchOperationId)
+                .ccContractId("CONTRACT-" + ccBchOperationId)
+                .ccOwnerDt("OWNER-DT-STUB")
+                .ccRegisterDt("REG-DT-STUB")
+                .ccOwnerKt("OWNER-KT-STUB")
+                .ccRegisterKt("REG-KT-STUB")
+                .ccDate(LocalDateTime.now())
+                .ccDateDoc(LocalDateTime.now())
+                .ccSum(new BigDecimal("1500.00"))
+                .ccPurpose("Local stub payment")
+                .build());
     }
 
     /** Заглушка PGW — не делает реальный HTTP, просто возвращает correlationId = requestId. */
