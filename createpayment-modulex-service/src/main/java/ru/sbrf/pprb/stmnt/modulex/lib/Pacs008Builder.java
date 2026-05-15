@@ -33,7 +33,6 @@ public class Pacs008Builder {
     private static final String NS = "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08";
     private static final int NAME_MAX = 140;
     private static final int CONTACT_TAIL = 20;
-    private static final String DEFAULT_BUDGET = "0";
     private static final Pattern ISO_DATE_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
     private static final Pattern PERIOD_TYPE_PATTERN = Pattern.compile("MM\\d{2}|QTR[1-4]|HLF[12]");
     private static final Pattern YEAR_PATTERN = Pattern.compile("\\d{4}");
@@ -53,7 +52,7 @@ public class Pacs008Builder {
             Element fitofi = elem(doc, document, "FIToFICstmrCdtTrf");
             appendGrpHdr(doc, fitofi, d);
             appendCdtTrfTxInf(doc, fitofi, d);
-            appendSplmtryData(doc, fitofi, d);
+            // SplmtryData по текущему эталону не выпускается.
 
             return serialize(doc);
         } catch (ParserConfigurationException | TransformerException e) {
@@ -100,15 +99,16 @@ public class Pacs008Builder {
 
         appendParty(doc, tx, "Dbtr", d.getCcDTName(), d.getCcDTINN());
         appendAcct(doc, tx, "DbtrAcct", d.getCcDTAcc());
-        appendAgent(doc, tx, "DbtrAgt", d.getCcDTBIC(), d.getCcDTNameBank(), d.getDtBranchCode());
+        appendAgent(doc, tx, "DbtrAgt", d.getCcDTBIC(), d.getCcDTNameBank());
         appendAcct(doc, tx, "DbtrAgtAcct", d.getCcDTBankCorrAcc());
 
-        appendAgent(doc, tx, "CdtrAgt", d.getCcKTBIC(), d.getCcKTNameBank(), d.getKtBranchCode());
+        appendAgent(doc, tx, "CdtrAgt", d.getCcKTBIC(), d.getCcKTNameBank());
         appendAcct(doc, tx, "CdtrAgtAcct", d.getCcKTBankCorrAcc());
         appendParty(doc, tx, "Cdtr", d.getCcKTName(), d.getCcKTINN());
         appendAcct(doc, tx, "CdtrAcct", d.getCcKTAcc());
 
         appendRmtInf(doc, tx, d);
+        // SplmtryData / BrnchId на текущем эталоне pacs.008 не выпускаются.
     }
 
     private void appendParty(Document doc, Element parent, String role, String name, String inn) {
@@ -141,7 +141,7 @@ public class Pacs008Builder {
     }
 
     private void appendAgent(Document doc, Element parent, String role,
-                             String bic, String bankName, String branchCode) {
+                             String bic, String bankName) {
         Element agt = elem(doc, parent, role);
         Element finInst = elem(doc, agt, "FinInstnId");
         if (bic != null && !bic.isBlank()) {
@@ -154,22 +154,32 @@ public class Pacs008Builder {
             text(doc, finInst, "Nm", bankName.length() > NAME_MAX
                     ? bankName.substring(0, NAME_MAX) : bankName);
         }
-        if (branchCode != null && !branchCode.isBlank()) {
-            Element brnchId = elem(doc, agt, "BrnchId");
-            text(doc, brnchId, "Id", branchCode);
-        }
     }
 
     private void appendRmtInf(Document doc, Element parent, TurnDocdataDraft d) {
-        // На MVP TaxRmt всегда присутствует (бюджетные реквизиты заглушкой "0"),
-        // поэтому RmtInf и Strd тоже всегда выпускаем.
+        boolean hasPurpose = d.getCcPurpose() != null && !d.getCcPurpose().isBlank();
+        boolean hasDoc = d.getCcNum() != null || d.getCcDateDoc() != null;
+        boolean hasTax = hasTaxData(d);
+        if (!hasPurpose && !hasDoc && !hasTax) return;
+
         Element rmtInf = elem(doc, parent, "RmtInf");
-        if (d.getCcPurpose() != null && !d.getCcPurpose().isBlank()) {
+        if (hasPurpose) {
             text(doc, rmtInf, "Ustrd", d.getCcPurpose());
         }
-        Element strd = elem(doc, rmtInf, "Strd");
-        appendRfrdDocInf(doc, strd, d);
-        appendTaxRmt(doc, strd, d);
+        if (hasDoc || hasTax) {
+            Element strd = elem(doc, rmtInf, "Strd");
+            if (hasDoc) appendRfrdDocInf(doc, strd, d);
+            if (hasTax) appendTaxRmt(doc, strd, d);
+        }
+    }
+
+    private boolean hasTaxData(TurnDocdataDraft d) {
+        return d.getCcKTKPP() != null || d.getCcDTKPP() != null
+                || d.getCcOktmo() != null || d.getCcDocNumber108() != null
+                || (d.getCcDocDate109() != null && !d.getCcDocDate109().isBlank())
+                || d.getCcKbk() != null || d.getCcReasonCode106() != null
+                || d.getCcDrawerStatus101() != null || d.getCcPaymentKind110() != null
+                || d.getCcTaxPeriod107() != null;
     }
 
     private void appendRfrdDocInf(Document doc, Element parent, TurnDocdataDraft d) {
@@ -188,10 +198,15 @@ public class Pacs008Builder {
     private void appendTaxRmt(Document doc, Element parent, TurnDocdataDraft d) {
         Element taxRmt = elem(doc, parent, "TaxRmt");
 
-        Element cdtr = elem(doc, taxRmt, "Cdtr");
-        text(doc, cdtr, "RegnId", nz(d.getCcTaxPeriod107(), DEFAULT_BUDGET));
-        if (d.getCcKTKPP() != null && !d.getCcKTKPP().isBlank()) {
-            text(doc, cdtr, "TaxTp", d.getCcKTKPP());
+        // Cdtr — RegnId/TaxTp только при наличии реальных значений.
+        if (d.getCcTaxPeriod107() != null || (d.getCcKTKPP() != null && !d.getCcKTKPP().isBlank())) {
+            Element cdtr = elem(doc, taxRmt, "Cdtr");
+            if (d.getCcTaxPeriod107() != null) {
+                text(doc, cdtr, "RegnId", d.getCcTaxPeriod107());
+            }
+            if (d.getCcKTKPP() != null && !d.getCcKTKPP().isBlank()) {
+                text(doc, cdtr, "TaxTp", d.getCcKTKPP());
+            }
         }
 
         if (d.getCcDTKPP() != null && !d.getCcDTKPP().isBlank()) {
@@ -199,16 +214,21 @@ public class Pacs008Builder {
             text(doc, dbtr, "TaxTp", d.getCcDTKPP());
         }
 
-        text(doc, taxRmt, "AdmstnZone", nz(d.getCcOktmo(), DEFAULT_BUDGET));
-        text(doc, taxRmt, "RefNb", nz(d.getCcDocNumber108(), DEFAULT_BUDGET));
+        if (d.getCcOktmo() != null) {
+            text(doc, taxRmt, "AdmstnZone", d.getCcOktmo());
+        }
+        if (d.getCcDocNumber108() != null) {
+            text(doc, taxRmt, "RefNb", d.getCcDocNumber108());
+        }
 
-        // Mtd / Dt по формату ccDocDate109
+        // Mtd / Dt — по формату ccDocDate109. Без MVP-дефолта "0".
         String docDate = d.getCcDocDate109();
-        if (docDate != null && ISO_DATE_PATTERN.matcher(docDate).matches()) {
-            text(doc, taxRmt, "Mtd", DEFAULT_BUDGET);
-            text(doc, taxRmt, "Dt", docDate);
-        } else {
-            text(doc, taxRmt, "Mtd", nz(docDate, DEFAULT_BUDGET));
+        if (docDate != null && !docDate.isBlank()) {
+            if (ISO_DATE_PATTERN.matcher(docDate).matches()) {
+                text(doc, taxRmt, "Dt", docDate);
+            } else {
+                text(doc, taxRmt, "Mtd", docDate);
+            }
         }
 
         appendTaxRcrd(doc, taxRmt, d);
@@ -244,24 +264,6 @@ public class Pacs008Builder {
         } else {
             text(doc, prd, "Yr", taxPeriod);
         }
-    }
-
-    private void appendSplmtryData(Document doc, Element parent, TurnDocdataDraft d) {
-        Element splmtry = elem(doc, parent, "SplmtryData");
-        Element envlp = elem(doc, splmtry, "Envlp");
-        Element updExt = elem(doc, envlp, "UPDExtension");
-        Element dynExt = elem(doc, updExt, "DynExt");
-
-        appendParam(doc, dynExt, "sourceIdModuleList", nz(d.getCcSystemId(), "stmnt-giganetwork"));
-        appendParam(doc, dynExt, "channel", "PPRB_PAYMENT");
-        appendParam(doc, dynExt, "sendServiceId", d.getCcTransactionId());
-    }
-
-    private void appendParam(Document doc, Element parent, String name, String value) {
-        if (value == null) return;
-        Element param = elem(doc, parent, "Param");
-        text(doc, param, "Name", name);
-        text(doc, param, "Value", value);
     }
 
     private Element elem(Document doc, Element parent, String name) {

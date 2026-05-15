@@ -387,13 +387,13 @@ GET /actuator/metrics
 
 ## Тесты
 
-**47/47 проходят** (`mvn test` через `_test-runner/pom.xml` — наследует
+**46/46 проходят** (`mvn test` через `_test-runner/pom.xml` — наследует
 `spring-boot-starter-parent` из Maven Central, чтобы запускаться без
 корп. Nexus).
 
 | Класс | Что покрывает | Тестов |
 |---|---|---|
-| [Pacs008BuilderTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/Pacs008BuilderTest.java) | сборка XML по спеке (TaxRmt, BrnchId, CreDtTm с offset, и т.д.) | 16 |
+| [Pacs008BuilderTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/Pacs008BuilderTest.java) | сборка XML по эталону (TaxRmt только КПП, без BrnchId/SplmtryData/«0»-defaults) | 15 |
 | [CcStatusMapperTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/CcStatusMapperTest.java) | маппинг PGW status + code → ccStatus | 7 |
 | [CreatePaymentLibraryTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/CreatePaymentLibraryTest.java) | основной поток с in-mem репо (вкл. ccDivisionId и ccReceiptDate) | 7 |
 | [ExecuteResponseHandlerTest](createpayment-modulex-service/src/test/java/ru/sbrf/pprb/stmnt/modulex/lib/ExecuteResponseHandlerTest.java) | обработка квитанции + ResultCallback | 5 |
@@ -615,6 +615,7 @@ Spring Boot 3.5 — может не зарегистрировать бин да
 - In-memory репозитории зарегистрированы явными `@Bean` методами в [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java) — bulletproof в любой корп. ComponentScan конфигурации. Сами классы остались plain POJO без Spring-аннотаций.
 - Шаблоны DataSpace-имплементаций в [`lib/dataspace/`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/) — пока неактивны (нет `@Primary`, тело `UnsupportedOperationException`). Активируются после регенерации `modulex-model-sdk` из текущего [`modulex.xml`](createpayment-modulex-service/src/main/resources/model/modulex.xml).
 - DSL Platform V DataSpace SDK (для будущей разкомментировки): фильтр `.setWhere(w -> w.ccXxxEq(...))`, проекция `.withCcXxx()`, обновление `entity.update(EntityRef.of(id), updateParam)`, конвертация `LocalDateTime → java.util.Date` для `ccRqTm`.
+- `Pacs008Builder` приведён к минимальному эталону: убраны `BrnchId`, `SplmtryData`, MVP-«0»-заглушки `RegnId/AdmstnZone/RefNb/Mtd` в `TaxRmt`. Секции выпускаются только при наличии реальных значений.
 - Конфиг переведён на env-var pattern (`${VAR:default}`) для всех URL. Добавлен профиль [`application-prod.yml`](createpayment-modulex-service/src/main/resources/application-prod.yml) (fail-fast при отсутствии prod-URL) и шаблон [`.env.prod.example`](createpayment-modulex-service/.env.prod.example).
 
 Что осталось 🔜:

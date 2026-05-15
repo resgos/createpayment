@@ -125,8 +125,7 @@ class CreatePaymentEndToEndTest {
                 .contains("<Dbtr><Nm>ИП БЕЛИКОВА И. П.</Nm>")
                 .contains("<Cdtr><Nm>ООО \"ДИЗЕЛЬ\"</Nm>")
                 .contains("<DbtrAgt>")
-                .contains("<BrnchId><Id>9038</Id></BrnchId>")
-                .contains("<BrnchId><Id>9039</Id></BrnchId>");
+                .doesNotContain("<BrnchId>"); // BrnchId не выпускается по эталону
 
         // 3. Сохранили turn_docdata и status_WalletTurn в PROCESSING
         TurnDocdataDraft persistedDraft = turnDocdataRepo.findByOperationId(sync.getOperationId())

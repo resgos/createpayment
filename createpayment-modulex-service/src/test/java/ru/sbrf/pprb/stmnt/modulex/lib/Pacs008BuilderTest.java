@@ -80,15 +80,14 @@ class Pacs008BuilderTest {
     }
 
     @Test
-    void supplementaryParamsAttached() {
+    void supplementaryDataNotEmitted() {
+        // По актуальному эталону SplmtryData не выпускается.
         TurnDocdataDraft d = sampleDraft();
 
         String xml = builder.build(d);
 
-        assertThat(xml).contains("<SplmtryData>");
-        assertThat(xml).contains("<Name>sourceIdModuleList</Name><Value>stmnt-giganetwork</Value>");
-        assertThat(xml).contains("<Name>channel</Name><Value>PPRB_PAYMENT</Value>");
-        assertThat(xml).contains("<Name>sendServiceId</Name><Value>tx-001</Value>");
+        assertThat(xml).doesNotContain("<SplmtryData>");
+        assertThat(xml).doesNotContain("<Name>sourceIdModuleList</Name>");
     }
 
     @Test
@@ -105,22 +104,20 @@ class Pacs008BuilderTest {
     }
 
     @Test
-    void taxRmtAlwaysPresentWithMvpDefaults() {
-        // MVP: TaxRmt отправляется всегда. Бюджетные поля = "0",
-        // КПП плательщика/получателя — реальные значения.
+    void taxRmtCarriesOnlyTaxTpFromKppByDefault() {
+        // По актуальному эталону TaxRmt содержит только Cdtr/TaxTp + Dbtr/TaxTp
+        // (КПП), без MVP-«0»-заглушек RegnId / AdmstnZone / RefNb / Mtd.
         TurnDocdataDraft d = sampleDraft();
 
         String xml = builder.build(d);
 
         assertThat(xml).contains("<TaxRmt>");
-        assertThat(xml).contains("<Cdtr>");
-        assertThat(xml).contains("<RegnId>0</RegnId>");
-        assertThat(xml).contains("<TaxTp>780001001</TaxTp>");  // ccKTKPP
-        assertThat(xml).contains("<Dbtr>");
-        assertThat(xml).contains("<TaxTp>773601001</TaxTp>");  // ccDTKPP
-        assertThat(xml).contains("<AdmstnZone>0</AdmstnZone>");
-        assertThat(xml).contains("<RefNb>0</RefNb>");
-        assertThat(xml).contains("<Mtd>0</Mtd>");
+        assertThat(xml).contains("<TaxTp>780001001</TaxTp>"); // ccKTKPP
+        assertThat(xml).contains("<TaxTp>773601001</TaxTp>"); // ccDTKPP
+        assertThat(xml).doesNotContain("<RegnId>0</RegnId>");
+        assertThat(xml).doesNotContain("<AdmstnZone>0</AdmstnZone>");
+        assertThat(xml).doesNotContain("<RefNb>0</RefNb>");
+        assertThat(xml).doesNotContain("<Mtd>0</Mtd>");
     }
 
     @Test
@@ -149,8 +146,9 @@ class Pacs008BuilderTest {
 
         String xml = builder.build(d);
 
-        assertThat(xml).contains("<Mtd>0</Mtd>");
         assertThat(xml).contains("<Dt>2017-01-31</Dt>");
+        // Mtd-«0»-fallback больше не выпускается
+        assertThat(xml).doesNotContain("<Mtd>");
     }
 
     @Test
@@ -188,21 +186,11 @@ class Pacs008BuilderTest {
     }
 
     @Test
-    void brnchIdAppearsWhenBranchCodeProvided() {
+    void brnchIdNotEmittedEvenWhenBranchCodePresent() {
+        // По актуальному эталону BrnchId не выпускается.
         TurnDocdataDraft d = sampleDraft();
         d.setDtBranchCode("9038");
         d.setKtBranchCode("9039");
-
-        String xml = builder.build(d);
-
-        assertThat(xml).contains("<DbtrAgt>");
-        assertThat(xml).contains("<BrnchId><Id>9038</Id></BrnchId>");
-        assertThat(xml).contains("<BrnchId><Id>9039</Id></BrnchId>");
-    }
-
-    @Test
-    void brnchIdOmittedWhenBranchCodeNull() {
-        TurnDocdataDraft d = sampleDraft();
 
         String xml = builder.build(d);
 
@@ -236,10 +224,12 @@ class Pacs008BuilderTest {
         assertThat(xml).contains("<MsgId>op-min</MsgId>");
         assertThat(xml).doesNotContain("<DbtrAcct>");
         assertThat(xml).doesNotContain("<CdtrAcct>");
-        // RmtInf всегда есть из-за обязательного TaxRmt на MVP
-        assertThat(xml).contains("<RmtInf>");
-        assertThat(xml).contains("<TaxRmt>");
-        assertThat(xml).contains("<RegnId>0</RegnId>");
+        // По актуальному эталону: нет данных назначения / документа / налогов →
+        // секция RmtInf вообще не выпускается.
+        assertThat(xml).doesNotContain("<RmtInf>");
+        assertThat(xml).doesNotContain("<TaxRmt>");
+        assertThat(xml).doesNotContain("<SplmtryData>");
+        assertThat(xml).doesNotContain("<BrnchId>");
     }
 
     private TurnDocdataDraft sampleDraft() {
