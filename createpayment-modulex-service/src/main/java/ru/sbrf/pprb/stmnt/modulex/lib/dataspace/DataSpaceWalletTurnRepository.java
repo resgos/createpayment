@@ -1,7 +1,7 @@
 package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+// import org.springframework.stereotype.Component; // отключено до регенерации SDK
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
 import ru.sbrf.pprb.stmnt.modulex.lib.WalletTurnRepository;
 import ru.sbrf.pprb.stmnt.services.simple.dataspacemodulex.DataSpaceApi;
@@ -29,8 +29,8 @@ import java.util.Optional;
  *   <li>{@link WalletTurnGet#getCcBchOperationId()} и пр. появятся в getter'ах.</li>
  * </ol>
  */
+// @Component // включить после регенерации SDK + добавь @Primary
 @Slf4j
-@Component
 public class DataSpaceWalletTurnRepository implements WalletTurnRepository {
 
     private final DataSpaceApi dsApi;

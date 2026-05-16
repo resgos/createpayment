@@ -2,7 +2,7 @@ package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
 import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+// import org.springframework.stereotype.Component; // отключено до регенерации SDK
 import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 import ru.sbrf.pprb.stmnt.modulex.graph.get.TurnDocdataGet;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataRepository;
@@ -26,8 +26,8 @@ import java.util.Optional;
  * <p>{@code ccRqTm} в SDK — {@link Date}, у нас в драфте {@link LocalDateTime} —
  * конвертим через {@link Timestamp#valueOf(LocalDateTime)}.</p>
  */
+// @Component // включить после регенерации SDK + добавь @Primary
 @Slf4j
-@Component
 public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
 
     private final DataSpaceApi dsApi;

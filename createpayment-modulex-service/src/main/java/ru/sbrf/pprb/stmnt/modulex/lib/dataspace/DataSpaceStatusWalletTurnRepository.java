@@ -2,7 +2,7 @@ package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
 import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+// import org.springframework.stereotype.Component; // отключено до регенерации SDK
 import ru.sbrf.pprb.stmnt.modulex.graph.get.StatusWalletTurnGet;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnUpdate;
@@ -33,8 +33,9 @@ import sbp.sbt.sdk.exception.SdkJsonRpcClientException;
  * <p>{@code objectId} проектируется в Get автоматически — явный
  * {@code .withObjectId()} в SDK отсутствует.</p>
  */
+// @Component // включить после регенерации SDK + добавь @Primary, чтобы вытеснить
+//             // in-memory bean из AppConfig
 @Slf4j
-@Component
 public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepository {
 
     private final DataSpaceApi dsApi;
