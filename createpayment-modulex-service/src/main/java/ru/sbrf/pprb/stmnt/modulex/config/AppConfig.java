@@ -11,9 +11,11 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.web.client.RestTemplate;
+import ru.sbrf.pprb.stmnt.modulex.logging.HttpLoggingInterceptor;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
@@ -63,7 +65,7 @@ public class AppConfig {
                                          ObjectMapper sberObjectMapper) {
         return jsonRestTemplate(builder,
                 sberProps.getConnectTimeoutMs(), sberProps.getReadTimeoutMs(),
-                sberObjectMapper);
+                sberObjectMapper, "sber");
     }
 
     @Bean
@@ -72,7 +74,7 @@ public class AppConfig {
                                         ObjectMapper sberObjectMapper) {
         return jsonRestTemplate(builder,
                 pgwProps.getConnectTimeoutMs(), pgwProps.getReadTimeoutMs(),
-                sberObjectMapper);
+                sberObjectMapper, "pgw");
     }
 
     // RestTemplate для result-callback клиент собирает себе сам в
@@ -81,11 +83,15 @@ public class AppConfig {
 
     private RestTemplate jsonRestTemplate(RestTemplateBuilder builder,
                                           int connectTimeoutMs, int readTimeoutMs,
-                                          ObjectMapper om) {
+                                          ObjectMapper om, String loggerName) {
         RestTemplate rt = builder
                 .setConnectTimeout(Duration.ofMillis(connectTimeoutMs))
                 .setReadTimeout(Duration.ofMillis(readTimeoutMs))
                 .build();
+        // Буферизация: чтобы интерцептор мог прочитать body ответа и не сожрать его.
+        rt.setRequestFactory(new BufferingClientHttpRequestFactory(rt.getRequestFactory()));
+        rt.getInterceptors().add(new HttpLoggingInterceptor(loggerName));
+
         MappingJackson2HttpMessageConverter jsonConverter = new MappingJackson2HttpMessageConverter(om);
         for (int i = 0; i < rt.getMessageConverters().size(); i++) {
             HttpMessageConverter<?> conv = rt.getMessageConverters().get(i);

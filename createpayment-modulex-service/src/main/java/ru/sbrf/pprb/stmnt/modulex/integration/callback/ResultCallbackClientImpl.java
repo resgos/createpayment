@@ -10,6 +10,7 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionResult;
 import ru.sbrf.pprb.stmnt.modulex.config.ResultCallbackProperties;
+import ru.sbrf.pprb.stmnt.modulex.logging.HttpLoggingInterceptor;
 
 import java.time.Duration;
 
@@ -51,6 +53,8 @@ public class ResultCallbackClientImpl implements ResultCallbackClient {
                 .setConnectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()))
                 .setReadTimeout(Duration.ofMillis(props.getReadTimeoutMs()))
                 .build();
+        rt.setRequestFactory(new BufferingClientHttpRequestFactory(rt.getRequestFactory()));
+        rt.getInterceptors().add(new HttpLoggingInterceptor("result-callback"));
 
         MappingJackson2HttpMessageConverter jsonConverter = new MappingJackson2HttpMessageConverter(om);
         boolean replaced = false;

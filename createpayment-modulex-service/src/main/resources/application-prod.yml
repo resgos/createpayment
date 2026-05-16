@@ -59,3 +59,6 @@ logging:
   level:
     root: WARN
     ru.sbrf.pprb.stmnt.modulex: INFO
+    # На проде HTTP-тела не пишем — могут быть многомегабайтные и содержать PII.
+    # Включить при разборах через LOG_LEVEL_HTTP=DEBUG.
+    ru.sbrf.pprb.stmnt.modulex.logging: ${LOG_LEVEL_HTTP:WARN}

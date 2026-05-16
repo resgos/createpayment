@@ -61,3 +61,5 @@ sber-integration:
 logging:
   level:
     ru.sbrf.pprb.stmnt.modulex: ${LOG_LEVEL_MODULEX:DEBUG}
+    # HTTP-логгеры — INPUT/OUTPUT тела целиком. INFO/WARN отключает их.
+    ru.sbrf.pprb.stmnt.modulex.logging: ${LOG_LEVEL_HTTP:DEBUG}
