@@ -9,8 +9,6 @@ import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnUpdate;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnView;
 import ru.sbrf.pprb.stmnt.modulex.packet.CreateStatusWalletTurnParam;
-import ru.sbrf.pprb.stmnt.modulex.packet.StatusWalletTurnRef;
-import ru.sbrf.pprb.stmnt.modulex.packet.UpdateStatusWalletTurnParam;
 import ru.sbrf.pprb.stmnt.modulex.packet.packet.Packet;
 import ru.sbrf.pprb.stmnt.services.simple.dataspacemodulex.DataSpaceApi;
 import sbp.sbt.sdk.exception.SdkJsonRpcClientException;
@@ -20,15 +18,20 @@ import java.util.Optional;
 /**
  * Реальная DataSpace-имплементация {@link StatusWalletTurnRepository}.
  *
- * <p>В корп-SDK поле {@code ccWalletTurnObjectId} ещё НЕ сгенерировано
- * (наше переименование в XML не дошло до regen). Поэтому здесь во все
- * SDK-вызовы идёт {@code ccWalletTurnId} — это deprecated в нашей XML
- * имя, которое реально присутствует в сгенерированных классах и в
- * деплое корп-БД. В нашем DTO поле остаётся {@code ccWalletTurnObjectId}
- * для семантической ясности; маппинг 1:1.</p>
+ * <p>Работаем строго через натуральные ключи из запроса
+ * ({@code ccWalletTurnId}, {@code ccOperationId}, {@code ccTransactionId},
+ * {@code ccStatus}). Никаких {@code objectId} не используем — он сгенерён
+ * DataSpace-ом и не имеет бизнес-смысла для нашего кейса.</p>
  *
- * <p>{@code updateOrCreate} с {@code KeyStatusWalletTurn} тоже недоступен
- * без regen — используем legacy search→if/else create/update.</p>
+ * <p>Запись статусов идемпотентна: каждый переход
+ * (PPRB_GET / PPRB_STARTED / PPRB_PROCESSING / PPRB_EXECUTED / PPRB_FAILED)
+ * пишется один раз благодаря уник-индексу {@code (ccWalletTurnId, ccStatus)}.
+ * Повторная попытка вставки той же пары → ловим duplicate-key и молча skip-аем.</p>
+ *
+ * <p>В корп-SDK поле {@code ccWalletTurnObjectId} ещё НЕ сгенерировано —
+ * поэтому во все вызовы идёт {@code ccWalletTurnId} (deprecated в нашей XML,
+ * но реально присутствует в сгенерированных классах и в БД). В DTO имя
+ * остаётся {@code ccWalletTurnObjectId} для семантической ясности; маппинг 1:1.</p>
  */
 @Slf4j
 @Primary
@@ -48,44 +51,35 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
             return;
         }
         try {
-            String existingId = findObjectId(u.getCcWalletTurnObjectId(), u.getCcStatus());
             Packet packet = new Packet();
-            if (existingId != null) {
-                packet.statusWalletTurn.update(StatusWalletTurnRef.of(existingId),
-                        UpdateStatusWalletTurnParam.create()
-                                .setCcOperationId(u.getCcOperationId())
-                                .setCcTransactionId(u.getCcTransactionId())
-                                .setCcStatusCode(u.getCcStatusCode())
-                                .setCcStatusDesc(u.getCcStatusDesc())
-                                .setSysLastChangeDate(u.getSysLastChangeDate()));
-                log.debug("status_WalletTurn updated: objectId={}, walletTurnObjectId={}, status={}, code={}",
-                        existingId, u.getCcWalletTurnObjectId(), u.getCcStatus(), u.getCcStatusCode());
-            } else {
-                packet.statusWalletTurn.create(CreateStatusWalletTurnParam.create()
-                        // ccWalletTurnId — единственное поле в корп-SDK, кладём blockchain id сюда.
-                        .setCcWalletTurnId(u.getCcWalletTurnObjectId())
-                        .setCcOperationId(u.getCcOperationId())
-                        .setCcTransactionId(u.getCcTransactionId())
-                        .setCcStatus(u.getCcStatus())
-                        .setCcStatusCode(u.getCcStatusCode())
-                        .setCcStatusDesc(u.getCcStatusDesc())
-                        .setSysLastChangeDate(u.getSysLastChangeDate()));
-                log.debug("status_WalletTurn created: walletTurnObjectId={}, status={}",
-                        u.getCcWalletTurnObjectId(), u.getCcStatus());
-            }
+            packet.statusWalletTurn.create(CreateStatusWalletTurnParam.create()
+                    .setCcWalletTurnId(u.getCcWalletTurnObjectId())
+                    .setCcOperationId(u.getCcOperationId())
+                    .setCcTransactionId(u.getCcTransactionId())
+                    .setCcStatus(u.getCcStatus())
+                    .setCcStatusCode(u.getCcStatusCode())
+                    .setCcStatusDesc(u.getCcStatusDesc())
+                    .setSysLastChangeDate(u.getSysLastChangeDate()));
             dsApi.execute(packet);
+            log.debug("status_WalletTurn created: walletTurnObjectId={}, status={}, code={}",
+                    u.getCcWalletTurnObjectId(), u.getCcStatus(), u.getCcStatusCode());
         } catch (SdkJsonRpcClientException e) {
-            log.error("status_WalletTurn upsert FAILED via DataSpace SDK: walletTurnObjectId={}, status={}, code={}, desc={}, exception={}: {}",
+            if (isDuplicateKey(e)) {
+                log.debug("status_WalletTurn already exists: walletTurnObjectId={}, status={} — idempotent skip",
+                        u.getCcWalletTurnObjectId(), u.getCcStatus());
+                return;
+            }
+            log.error("status_WalletTurn create FAILED via DataSpace SDK: walletTurnObjectId={}, status={}, code={}, desc={}, exception={}: {}",
                     u.getCcWalletTurnObjectId(), u.getCcStatus(),
                     u.getCcStatusCode(), u.getCcStatusDesc(),
                     e.getClass().getName(), e.getMessage(), e);
-            throw new IllegalStateException("status_WalletTurn upsert failed: "
+            throw new IllegalStateException("status_WalletTurn create failed: "
                     + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         } catch (RuntimeException e) {
-            log.error("status_WalletTurn upsert FAILED (unexpected): walletTurnObjectId={}, status={}, exception={}: {}",
+            log.error("status_WalletTurn create FAILED (unexpected): walletTurnObjectId={}, status={}, exception={}: {}",
                     u.getCcWalletTurnObjectId(), u.getCcStatus(),
                     e.getClass().getName(), e.getMessage(), e);
-            throw new IllegalStateException("status_WalletTurn upsert failed: "
+            throw new IllegalStateException("status_WalletTurn create failed: "
                     + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
     }
@@ -116,11 +110,30 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
         }
     }
 
-    /** Найти objectId записи по уник. паре {@code (ccWalletTurnId, ccStatus)}. */
-    private String findObjectId(String walletTurnObjectId, String status) throws SdkJsonRpcClientException {
-        GraphCollection<StatusWalletTurnGet> coll = dsApi.searchStatusWalletTurn(g -> g
-                .setWhere(w -> w.ccWalletTurnIdEq(walletTurnObjectId).and(w.ccStatusEq(status)))
-                .withObjectId());
-        return coll.stream().findFirst().map(StatusWalletTurnGet::getObjectId).orElse(null);
+    /**
+     * Грубое распознавание duplicate-key ошибки от DataSpace SDK.
+     * Без жёсткой привязки к конкретному классу — проверяем по подстрокам в message.
+     */
+    private static boolean isDuplicateKey(Throwable e) {
+        Throwable cur = e;
+        while (cur != null) {
+            String m = cur.getMessage();
+            if (m != null) {
+                String lower = m.toLowerCase();
+                if (lower.contains("duplicate")
+                        || lower.contains("unique")
+                        || lower.contains("уник")
+                        || lower.contains("дубл")
+                        || lower.contains("already exist")) {
+                    return true;
+                }
+            }
+            String cn = cur.getClass().getSimpleName().toLowerCase();
+            if (cn.contains("duplicate") || cn.contains("unique")) {
+                return true;
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 }

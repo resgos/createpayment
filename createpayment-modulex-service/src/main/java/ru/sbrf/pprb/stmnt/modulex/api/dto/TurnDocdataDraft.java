@@ -19,8 +19,6 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class TurnDocdataDraft {
 
-    private String objectid;
-
     private String ccRegisterId;
     private String ccWalletId;
 
