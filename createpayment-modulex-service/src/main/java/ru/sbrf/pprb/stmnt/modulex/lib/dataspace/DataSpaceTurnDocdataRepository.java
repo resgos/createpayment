@@ -2,7 +2,8 @@ package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
 import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
-// import org.springframework.stereotype.Component; // отключено до регенерации SDK
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 import ru.sbrf.pprb.stmnt.modulex.graph.get.TurnDocdataGet;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataRepository;
@@ -19,15 +20,15 @@ import java.util.Optional;
 /**
  * Реальная DataSpace-имплементация {@link TurnDocdataRepository}.
  *
- * <p>DSL: {@code packet.turnDocdata.create(CreateTurnDocdataParam.create().setCcXxx(...))}
- * для записи; {@code dsApi.searchTurnDocdata(g -> g.setWhere(w -> w.ccOperationIdEq(...)))}
- * для чтения.</p>
+ * <p>{@code save} → {@code Packet.turnDocdata.create(CreateTurnDocdataParam.create()....)};
+ * {@code findByOperationId} → {@code searchTurnDocdata} с проекцией нужных полей.</p>
  *
  * <p>{@code ccRqTm} в SDK — {@link Date}, у нас в драфте {@link LocalDateTime} —
- * конвертим через {@link Timestamp#valueOf(LocalDateTime)}.</p>
+ * конвертация через {@link Timestamp#valueOf(LocalDateTime)}.</p>
  */
-// @Component // включить после регенерации SDK + добавь @Primary
 @Slf4j
+@Primary
+@Component
 public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
 
     private final DataSpaceApi dsApi;
@@ -62,6 +63,7 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
                     .setCcNum(d.getCcNum())
                     .setCcDateDoc(d.getCcDateDoc())
                     .setCcPurpose(d.getCcPurpose())
+                    .setCcPurposeCode(d.getCcPurposeCode())
                     .setCcDTName(d.getCcDTName())
                     .setCcDTINN(d.getCcDTINN())
                     .setCcDTKPP(d.getCcDTKPP())
@@ -96,8 +98,8 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
                     .setCcReceiptDate(d.getCcReceiptDate())
                     .setCcDivisionId(d.getCcDivisionId()));
             dsApi.execute(packet);
-            log.debug("turn_docdata created: ccOperationId={}, ccTransactionId={}",
-                    d.getCcOperationId(), d.getCcTransactionId());
+            log.debug("turn_docdata created: ccOperationId={}, ccTransactionId={}, ccBchOperationId={}",
+                    d.getCcOperationId(), d.getCcTransactionId(), d.getCcBchOperationId());
         } catch (SdkJsonRpcClientException e) {
             log.error("turn_docdata save failed for ccOperationId={}: {}",
                     d.getCcOperationId(), e.getMessage(), e);
@@ -111,27 +113,43 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
             return Optional.empty();
         }
         try {
+            log.debug("DataSpace searchTurnDocdata ccOperationId={}", ccOperationId);
             GraphCollection<TurnDocdataGet> coll = dsApi.searchTurnDocdata(g -> g
                     .setWhere(w -> w.ccOperationIdEq(ccOperationId))
                     .withCcRegisterId()
+                    .withCcWalletId()
+                    .withCcDate()
+                    .withCcOperationDay()
                     .withCcOperationId()
                     .withCcTransactionId()
                     .withCcContractId()
                     .withCcRqUId()
+                    .withCcPayStatus()
+                    .withCcDT()
+                    .withCcSum()
+                    .withCcSumNAT()
+                    .withCcSumPO()
+                    .withCcSumPL()
+                    .withCcTypeDoc()
+                    .withCcNum()
+                    .withCcDateDoc()
+                    .withCcPurpose()
                     .withCcDTName()
                     .withCcDTINN()
                     .withCcDTKPP()
                     .withCcDTAcc()
                     .withCcDTBIC()
+                    .withCcDTNameBank()
                     .withCcDTBankCorrAcc()
+                    .withCcDTRegisterId()
                     .withCcKTName()
                     .withCcKTINN()
                     .withCcKTKPP()
                     .withCcKTAcc()
                     .withCcKTBIC()
+                    .withCcKTNameBank()
                     .withCcKTBankCorrAcc()
-                    .withCcSum()
-                    .withCcPurpose()
+                    .withCcKTRegisterId()
                     .withCcDivisionId());
             return coll.stream().findFirst().map(this::map);
         } catch (SdkJsonRpcClientException e) {
@@ -144,24 +162,39 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
     private TurnDocdataDraft map(TurnDocdataGet g) {
         return TurnDocdataDraft.builder()
                 .ccRegisterId(g.getCcRegisterId())
+                .ccWalletId(g.getCcWalletId())
+                .ccDate(g.getCcDate())
+                .ccOperationDay(g.getCcOperationDay())
                 .ccOperationId(g.getCcOperationId())
                 .ccTransactionId(g.getCcTransactionId())
                 .ccContractId(g.getCcContractId())
                 .ccRqUId(g.getCcRqUId())
+                .ccPayStatus(g.getCcPayStatus())
+                .ccDT(g.getCcDT())
+                .ccSum(g.getCcSum())
+                .ccSumNAT(g.getCcSumNAT())
+                .ccSumPO(g.getCcSumPO())
+                .ccSumPL(g.getCcSumPL())
+                .ccTypeDoc(g.getCcTypeDoc())
+                .ccNum(g.getCcNum())
+                .ccDateDoc(g.getCcDateDoc())
+                .ccPurpose(g.getCcPurpose())
                 .ccDTName(g.getCcDTName())
                 .ccDTINN(g.getCcDTINN())
                 .ccDTKPP(g.getCcDTKPP())
                 .ccDTAcc(g.getCcDTAcc())
                 .ccDTBIC(g.getCcDTBIC())
+                .ccDTNameBank(g.getCcDTNameBank())
                 .ccDTBankCorrAcc(g.getCcDTBankCorrAcc())
+                .ccDTRegisterId(g.getCcDTRegisterId())
                 .ccKTName(g.getCcKTName())
                 .ccKTINN(g.getCcKTINN())
                 .ccKTKPP(g.getCcKTKPP())
                 .ccKTAcc(g.getCcKTAcc())
                 .ccKTBIC(g.getCcKTBIC())
+                .ccKTNameBank(g.getCcKTNameBank())
                 .ccKTBankCorrAcc(g.getCcKTBankCorrAcc())
-                .ccSum(g.getCcSum())
-                .ccPurpose(g.getCcPurpose())
+                .ccKTRegisterId(g.getCcKTRegisterId())
                 .ccDivisionId(g.getCcDivisionId())
                 .build();
     }

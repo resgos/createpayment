@@ -446,20 +446,18 @@ mvn -f _test-runner/pom.xml test
 | [DataSpaceTurnDocdataRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceTurnDocdataRepository.java) | `save` → `Packet.turnDocdata.create + dsApi.execute(packet)`; `findByOperationId` → `searchTurnDocdata` |
 | [DataSpaceStatusWalletTurnRepository](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceStatusWalletTurnRepository.java) | `upsertStatus` → search по `(ccWalletTurnObjectId, ccStatus)`, затем `create` либо `update` |
 
-Сейчас все три — **шаблоны** (без `@Primary`, тело `UnsupportedOperationException`). Активны
-in-memory bean-ы из [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java).
+**Активны** — `@Primary @Component`, инжектят `DataSpaceApi` из corp `simpleservicemodulex`.
+В DI они вытесняют in-memory `@Bean`-ы из [`AppConfig`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/config/AppConfig.java).
 
-**Почему не активны?** Текущий `modulex-model-sdk-0.0.1-6468` сгенерирован
-из **старой** версии `modulex.xml` — getter'ов/setter'ов новых полей
-(`ccBchOperationId`, `ccDate`, `ccTxId`, `ccBlockNumber`, `ccOwnerDt/Kt`,
-`ccSum`, `ccDateDoc`, `ccPurpose`, `ccSignature` в `WalletTurn`;
-`ccWalletTurnObjectId` в `StatusWalletTurn`) в SDK нет.
+В локальной сборке (`_test-runner` / `_local-run`, без corp SDK) пакет
+`lib/dataspace/` **исключён** из компиляции через
+`maven-compiler-plugin <excludes>` — там работают только in-memory `@Bean`.
 
-**Чтобы активировать**: регенерируй SDK из актуального
-[`modulex.xml`](createpayment-modulex-service/src/main/resources/model/modulex.xml)
-→ раскомментируй тела (шаблон с правильным DSL `searchXxx` / `Packet`-create
-лежит в javadoc каждого класса) → поставь `@Primary` обратно. После этого
-в DI они вытеснят in-memory fallback автоматически.
+| Класс | Что делает |
+|---|---|
+| [`DataSpaceWalletTurnRepository`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceWalletTurnRepository.java) | `searchWalletTurn(g -> g.setWhere(w -> w.ccBchOperationIdEq(...))....withCcXxx())` + маппинг в DTO |
+| [`DataSpaceTurnDocdataRepository`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceTurnDocdataRepository.java) | `save` через `Packet.turnDocdata.create(CreateTurnDocdataParam...)`; `findByOperationId` через `searchTurnDocdata` |
+| [`DataSpaceStatusWalletTurnRepository`](createpayment-modulex-service/src/main/java/ru/sbrf/pprb/stmnt/modulex/lib/dataspace/DataSpaceStatusWalletTurnRepository.java) | upsert по `(ccWalletTurnObjectId, ccStatus)`: search → если есть `update(StatusWalletTurnRef.of(id), ...)`, иначе `create(...)` |
 
 Зависимость — `DataSpaceApi` из corp `simpleservicemodulex` (бин уже
 предоставлен этим артефактом, ничего отдельно конфигурить не нужно

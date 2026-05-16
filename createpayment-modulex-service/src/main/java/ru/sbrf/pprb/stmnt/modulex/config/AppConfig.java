@@ -106,27 +106,24 @@ public class AppConfig {
     }
 
     /**
-     * In-memory fallback-репозитории.
-     * {@code @Primary} гарантирует, что при наличии другого бина того же типа
-     * (например, если кто-то снова добавит {@code @Component} на DataSpace-стаб
-     * до того, как у того появится свой {@code @Primary}) — DI всё равно
-     * выбирает наш in-memory bean, а не падает с "expected single bean".
-     * Реальная DataSpace-имплементация после регенерации SDK ставит свой
-     * {@code @Primary} — он перекроет наш.
+     * In-memory fallback-репозитории. Используются, если нет DataSpace-имплементации
+     * (например, в _test-runner / _local-run, где пакет {@code lib/dataspace/}
+     * исключён из компиляции).
+     *
+     * <p>В корп. сборке к классам в {@code lib/dataspace/} применён {@code @Primary @Component} —
+     * они вытесняют эти бины автоматически. Здесь {@code @Primary} НЕ ставим, иначе
+     * получим два {@code @Primary} кандидата.</p>
      */
-    @Primary
     @Bean
     public WalletTurnRepository walletTurnRepository() {
         return new InMemoryWalletTurnRepository();
     }
 
-    @Primary
     @Bean
     public TurnDocdataRepository turnDocdataRepository() {
         return new InMemoryTurnDocdataRepository();
     }
 
-    @Primary
     @Bean
     public StatusWalletTurnRepository statusWalletTurnRepository() {
         return new InMemoryStatusWalletTurnRepository();

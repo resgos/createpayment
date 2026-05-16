@@ -1,36 +1,27 @@
 package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
+import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
-// import org.springframework.stereotype.Component; // отключено до регенерации SDK
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
+import ru.sbrf.pprb.stmnt.modulex.graph.get.WalletTurnGet;
 import ru.sbrf.pprb.stmnt.modulex.lib.WalletTurnRepository;
 import ru.sbrf.pprb.stmnt.services.simple.dataspacemodulex.DataSpaceApi;
+import sbp.sbt.sdk.exception.SdkJsonRpcClientException;
 
 import java.util.Optional;
 
 /**
- * Шаблон DataSpace-имплементации {@link WalletTurnRepository}.
+ * Реальная DataSpace-имплементация {@link WalletTurnRepository}.
+ * Поиск по {@code ccBchOperationId} с проекцией всех актуальных полей,
+ * затем маппинг {@code WalletTurnGet → WalletTurn DTO}.
  *
- * <p><b>Не активен</b> — нет {@code @Primary}, в DI побеждает in-memory bean
- * из {@code AppConfig}. Текущий {@code modulex-model-sdk} (0.0.1-6468)
- * сгенерирован из старой схемы {@code WalletTurn} и не содержит новых
- * полей: {@code ccBchOperationId}, {@code ccDate}, {@code ccTxId},
- * {@code ccBlockNumber}, {@code ccOwnerDt/Kt}, {@code ccSum}, {@code ccDateDoc},
- * {@code ccPurpose}, {@code ccSignature}.</p>
- *
- * <p>Чтобы активировать:</p>
- * <ol>
- *   <li>Регенерируй SDK из актуального {@code modulex.xml}
- *       (mvn -P generate-model или эквивалент в твоей build-инфре);</li>
- *   <li>Реализуй тело {@link #findByBchOperationId(String)} через
- *       {@code dsApi.searchWalletTurn(g -> g.setWhere(w -> w.ccBchOperationIdEq(...))
- *           .withCcDate().withCcBchOperationId().withCcTxId()...)};</li>
- *   <li>Поставь {@code @Primary} обратно;</li>
- *   <li>{@link WalletTurnGet#getCcBchOperationId()} и пр. появятся в getter'ах.</li>
- * </ol>
+ * <p>{@code @Primary} — вытесняет in-memory bean из {@code AppConfig}.</p>
  */
-// @Component // включить после регенерации SDK + добавь @Primary
 @Slf4j
+@Primary
+@Component
 public class DataSpaceWalletTurnRepository implements WalletTurnRepository {
 
     private final DataSpaceApi dsApi;
@@ -41,10 +32,59 @@ public class DataSpaceWalletTurnRepository implements WalletTurnRepository {
 
     @Override
     public Optional<WalletTurn> findByBchOperationId(String ccBchOperationId) {
-        throw new UnsupportedOperationException(
-                "DataSpaceWalletTurnRepository: текущий modulex-model-sdk не содержит "
-                        + "новых полей WalletTurn (ccBchOperationId/ccDate/ccTxId и др.). "
-                        + "Регенерируй SDK из обновлённого modulex.xml и раскомментируй "
-                        + "тело (см. javadoc).");
+        if (ccBchOperationId == null || ccBchOperationId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            log.debug("DataSpace searchWalletTurn ccBchOperationId={}", ccBchOperationId);
+            GraphCollection<WalletTurnGet> coll = dsApi.searchWalletTurn(g -> g
+                    .setWhere(w -> w.ccBchOperationIdEq(ccBchOperationId))
+                    .withCcDate()
+                    .withCcBchOperationId()
+                    .withCcTxId()
+                    .withCcBlockNumber()
+                    .withCcContractId()
+                    .withCcOwnerDt()
+                    .withCcRegisterDt()
+                    .withCcOwnerKt()
+                    .withCcRegisterKt()
+                    .withCcSum()
+                    .withCcDateDoc()
+                    .withCcPurpose()
+                    .withCcOperationId()
+                    .withCcTransactionId()
+                    .withCcRqTm()
+                    .withCcRqUId()
+                    .withCcSignature()
+                    .withSysLastChangeDate());
+            return coll.stream().findFirst().map(this::map);
+        } catch (SdkJsonRpcClientException e) {
+            log.error("WalletTurn lookup failed for ccBchOperationId={}: {}",
+                    ccBchOperationId, e.getMessage(), e);
+            throw new IllegalStateException("WalletTurn lookup failed", e);
+        }
+    }
+
+    private WalletTurn map(WalletTurnGet g) {
+        return WalletTurn.builder()
+                .ccDate(g.getCcDate())
+                .ccBchOperationId(g.getCcBchOperationId())
+                .ccTxId(g.getCcTxId())
+                .ccBlockNumber(g.getCcBlockNumber())
+                .ccContractId(g.getCcContractId())
+                .ccOwnerDt(g.getCcOwnerDt())
+                .ccRegisterDt(g.getCcRegisterDt())
+                .ccOwnerKt(g.getCcOwnerKt())
+                .ccRegisterKt(g.getCcRegisterKt())
+                .ccSum(g.getCcSum())
+                .ccDateDoc(g.getCcDateDoc())
+                .ccPurpose(g.getCcPurpose())
+                .ccOperationId(g.getCcOperationId())
+                .ccTransactionId(g.getCcTransactionId())
+                .ccRqTm(g.getCcRqTm())
+                .ccRqUId(g.getCcRqUId())
+                .ccSignature(g.getCcSignature())
+                .sysLastChangeDate(g.getSysLastChangeDate())
+                .build();
     }
 }

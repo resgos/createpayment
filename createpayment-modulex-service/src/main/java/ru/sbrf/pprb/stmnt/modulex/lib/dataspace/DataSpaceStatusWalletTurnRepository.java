@@ -2,7 +2,8 @@ package ru.sbrf.pprb.stmnt.modulex.lib.dataspace;
 
 import com.sbt.pprb.ac.graph.collection.GraphCollection;
 import lombok.extern.slf4j.Slf4j;
-// import org.springframework.stereotype.Component; // отключено до регенерации SDK
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.graph.get.StatusWalletTurnGet;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnUpdate;
@@ -16,26 +17,17 @@ import sbp.sbt.sdk.exception.SdkJsonRpcClientException;
 /**
  * Реальная DataSpace-имплементация {@link StatusWalletTurnRepository}.
  *
- * <p>Текущий {@code modulex-model-sdk} ещё генерирует поле как {@code ccWalletTurnId}
- * (старое имя). В новом {@code modulex.xml} оно переименовано в
- * {@code ccWalletTurnObjectId} — после регенерации SDK поменяй
- * {@code setCcWalletTurnId} → {@code setCcWalletTurnObjectId} и
- * {@code ccWalletTurnIdEq} → {@code ccWalletTurnObjectIdEq}.</p>
- *
- * <p>Upsert по уник-ключу:</p>
+ * <p>Upsert по уник-ключу {@code (ccWalletTurnObjectId, ccStatus)}:</p>
  * <ol>
- *   <li>search по паре (id + status);</li>
- *   <li>если запись есть — {@code packet.statusWalletTurn.update(Ref.of(objectId), updateParam)};</li>
+ *   <li>{@code dsApi.searchStatusWalletTurn(g -> g.setWhere(w -> w.ccWalletTurnObjectIdEq(...).and(w.ccStatusEq(...))).withObjectId())};</li>
+ *   <li>если запись есть — {@code packet.statusWalletTurn.update(StatusWalletTurnRef.of(objectId), updateParam)};</li>
  *   <li>если нет — {@code packet.statusWalletTurn.create(createParam)};</li>
  *   <li>{@code dsApi.execute(packet)}.</li>
  * </ol>
- *
- * <p>{@code objectId} проектируется в Get автоматически — явный
- * {@code .withObjectId()} в SDK отсутствует.</p>
  */
-// @Component // включить после регенерации SDK + добавь @Primary, чтобы вытеснить
-//             // in-memory bean из AppConfig
 @Slf4j
+@Primary
+@Component
 public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepository {
 
     private final DataSpaceApi dsApi;
@@ -47,7 +39,7 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
     @Override
     public void upsertStatus(StatusWalletTurnUpdate u) {
         if (u == null || u.getCcWalletTurnObjectId() == null || u.getCcStatus() == null) {
-            log.warn("Skip upsert: ccWalletTurnObjectId or ccStatus is null");
+            log.warn("Skip status upsert: ccWalletTurnObjectId or ccStatus is null");
             return;
         }
         try {
@@ -61,13 +53,11 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
                                 .setCcStatusCode(u.getCcStatusCode())
                                 .setCcStatusDesc(u.getCcStatusDesc())
                                 .setSysLastChangeDate(u.getSysLastChangeDate()));
-                log.debug("status_WalletTurn updated: objectId={}, walletTurnObjectId={}, status={}",
-                        existingId, u.getCcWalletTurnObjectId(), u.getCcStatus());
+                log.debug("status_WalletTurn updated: objectId={}, walletTurnObjectId={}, status={}, code={}",
+                        existingId, u.getCcWalletTurnObjectId(), u.getCcStatus(), u.getCcStatusCode());
             } else {
                 packet.statusWalletTurn.create(CreateStatusWalletTurnParam.create()
-                        // SDK ещё использует старое имя ccWalletTurnId — value кладём из
-                        // нашего ccWalletTurnObjectId (это один и тот же external bch payment id).
-                        .setCcWalletTurnId(u.getCcWalletTurnObjectId())
+                        .setCcWalletTurnObjectId(u.getCcWalletTurnObjectId())
                         .setCcOperationId(u.getCcOperationId())
                         .setCcTransactionId(u.getCcTransactionId())
                         .setCcStatus(u.getCcStatus())
@@ -85,10 +75,11 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
         }
     }
 
+    /** Найти {@code objectId} записи по уник. паре {@code (ccWalletTurnObjectId, ccStatus)}. */
     private String findObjectId(String walletTurnObjectId, String status) throws SdkJsonRpcClientException {
-        // SDK имя поля — ccWalletTurnId; objectId проектируется автоматически.
         GraphCollection<StatusWalletTurnGet> coll = dsApi.searchStatusWalletTurn(g -> g
-                .setWhere(w -> w.ccWalletTurnIdEq(walletTurnObjectId).and(w.ccStatusEq(status))));
+                .setWhere(w -> w.ccWalletTurnObjectIdEq(walletTurnObjectId).and(w.ccStatusEq(status)))
+                .withObjectId());
         return coll.stream().findFirst().map(StatusWalletTurnGet::getObjectId).orElse(null);
     }
 }
