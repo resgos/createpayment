@@ -11,6 +11,7 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -106,19 +107,26 @@ public class AppConfig {
 
     /**
      * In-memory fallback-репозитории.
-     * Реальная DataSpace-имплементация подключается своим {@code @Component @Primary}
-     * (см. секцию "Подключение реального DataSpace" в README).
+     * {@code @Primary} гарантирует, что при наличии другого бина того же типа
+     * (например, если кто-то снова добавит {@code @Component} на DataSpace-стаб
+     * до того, как у того появится свой {@code @Primary}) — DI всё равно
+     * выбирает наш in-memory bean, а не падает с "expected single bean".
+     * Реальная DataSpace-имплементация после регенерации SDK ставит свой
+     * {@code @Primary} — он перекроет наш.
      */
+    @Primary
     @Bean
     public WalletTurnRepository walletTurnRepository() {
         return new InMemoryWalletTurnRepository();
     }
 
+    @Primary
     @Bean
     public TurnDocdataRepository turnDocdataRepository() {
         return new InMemoryTurnDocdataRepository();
     }
 
+    @Primary
     @Bean
     public StatusWalletTurnRepository statusWalletTurnRepository() {
         return new InMemoryStatusWalletTurnRepository();
