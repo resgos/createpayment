@@ -1,16 +1,17 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionResult;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionStatus;
-import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft;
 import ru.sbrf.pprb.stmnt.modulex.integration.callback.ResultCallbackClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ResponseTicketRequest;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ResultStatus;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.StatusInfo;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,8 +25,43 @@ class ExecuteResponseHandlerTest {
     private static final String BCH_OP = "BCH-1";
     private static final String TX_ID = "tx-1";
 
+    /** Реальный пример payload-а от PGW — взят из IFT-лога. */
+    private static final String OPERATION_DTO_JSON = "{\"performedOperations\":[{"
+            + "\"objectId\":\"obj-1\","
+            + "\"accountingDate\":\"11.05.2026 00:00:00\","
+            + "\"register\":{\"objectId\":\"7357234983332151303\"},"
+            + "\"party\":{\"clientId\":\"1935680441079484251\"},"
+            + "\"operationSum\":1500,"
+            + "\"operationCurrency\":\"810\","
+            + "\"documentReason\":{"
+            + "\"inDate\":\"11.05.2026 00:00:00\","
+            + "\"orderDate\":\"15.05.2026 00:00:00\","
+            + "\"payerAccount\":\"40702810538000097171\","
+            + "\"payerName\":\"ООО Плательщик\","
+            + "\"payerInn\":\"9929029114\","
+            + "\"payerKpp\":\"583501361\","
+            + "\"payerBic\":\"044525225\","
+            + "\"payerBankName\":\"ПАО Сбербанк\","
+            + "\"payerCorrAccount\":\"30101810400000000225\","
+            + "\"receiverAccount\":\"40702810138000101218\","
+            + "\"receiverName\":\"ООО Получатель\","
+            + "\"receiverInn\":\"9929029114\","
+            + "\"receiverKpp\":\"583501361\","
+            + "\"receiverBic\":\"044525225\","
+            + "\"receiverBankName\":\"ПАО Сбербанк\","
+            + "\"receiverCorrAccount\":\"30101810400000000225\","
+            + "\"paymentAmount\":1500,"
+            + "\"paymentPriority\":5,"
+            + "\"remittanceInformation\":\"Test\","
+            + "\"orderNumber\":\"289312\","
+            + "\"subdivision\":\"38903801679\""
+            + "},"
+            + "\"externalAttributes\":{\"processNumber\":\"" + TX_ID + "\"}"
+            + "}]}";
+
     private InMemoryStatusWalletTurnRepository statusRepo;
     private InMemoryTurnDocdataRepository turnDocdataRepo;
+    private PgwOperationDtoParser parser;
     private CapturingCallback callback;
     private ExecuteResponseHandler handler;
 
@@ -33,22 +69,25 @@ class ExecuteResponseHandlerTest {
     void setUp() {
         statusRepo = new InMemoryStatusWalletTurnRepository();
         turnDocdataRepo = new InMemoryTurnDocdataRepository();
+        parser = new PgwOperationDtoParser(new ObjectMapper());
         callback = new CapturingCallback();
-        // Преднаполнили turn_docdata — он сохраняется при выполнении execute.
-        turnDocdataRepo.save(TurnDocdataDraft.builder()
+        // Преднаполнили status_WalletTurn PPRB_STARTED — таким он был после синка.
+        statusRepo.upsertStatus(StatusWalletTurnUpdate.builder()
+                .ccWalletTurnObjectId(BCH_OP)
                 .ccOperationId(UPD_UID)
                 .ccTransactionId(TX_ID)
-                .ccBchOperationId(BCH_OP)
-                .ccContractId("C-1")
+                .ccStatus(ExecutionStatus.PPRB_STARTED.name())
+                .sysLastChangeDate(LocalDateTime.now())
                 .build());
 
-        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, callback);
+        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, parser, callback);
     }
 
     @Test
-    void successTicketWritesExecutedStatusAndSendsCallback() {
+    void successTicketSavesTurnDocdataWritesExecutedAndSendsCallback() {
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID(UPD_UID)
+                .operationDto(OPERATION_DTO_JSON)
                 .resultStatus(ResultStatus.SUCCESS)
                 .statusInfo(StatusInfo.builder().code("300").message("Документ успешно обработан").build())
                 .build();
@@ -56,7 +95,10 @@ class ExecuteResponseHandlerTest {
         ApiResult ack = handler.handle(CORR_ID, IDEMP_KEY, ticket);
         assertThat(ack.getStatus()).isEqualTo("SUCCESS");
 
-        // status_WalletTurn: запись PPRB_EXECUTED с правильными полями
+        // turn_docdata создан из callback-payload
+        assertThat(turnDocdataRepo.findByOperationId(UPD_UID)).isPresent();
+
+        // status_WalletTurn: PPRB_EXECUTED с правильными ID-ами (резолвнуто через PPRB_STARTED).
         StatusWalletTurnUpdate row = statusRepo.find(BCH_OP, "PPRB_EXECUTED");
         assertThat(row).isNotNull();
         assertThat(row.getCcOperationId()).isEqualTo(UPD_UID);
@@ -64,14 +106,13 @@ class ExecuteResponseHandlerTest {
         assertThat(row.getCcStatusCode()).isEqualTo("300");
         assertThat(row.getCcStatusDesc()).isEqualTo("Документ успешно обработан");
 
-        // ResultCallback унесёт PPRB_EXECUTED с обоими ID
+        // Финальный callback ушёл инициатору.
         assertThat(callback.sent).hasSize(1);
         ExecutionResult er = callback.sent.get(0);
         assertThat(er.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
         assertThat(er.getOperationId()).isEqualTo(UPD_UID);
         assertThat(er.getTransactionId()).isEqualTo(TX_ID);
         assertThat(er.getBchOperationId()).isEqualTo(BCH_OP);
-        assertThat(er.getContractId()).isEqualTo("C-1");
         assertThat(er.getStatusDescription()).isNull();
     }
 
@@ -79,6 +120,7 @@ class ExecuteResponseHandlerTest {
     void errorTicketWritesFailedStatusAndCallbackWithDescription() {
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID(UPD_UID)
+                .operationDto(OPERATION_DTO_JSON)
                 .resultStatus(ResultStatus.ERROR)
                 .statusInfo(StatusInfo.builder().code("150").message("Ошибка обработки").build())
                 .build();
@@ -93,9 +135,10 @@ class ExecuteResponseHandlerTest {
     }
 
     @Test
-    void processingTicketDoesNotSendCallback() {
+    void processingTicketDoesNotSaveDocdataAndDoesNotSendCallback() {
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID(UPD_UID)
+                .operationDto(OPERATION_DTO_JSON)
                 .resultStatus(ResultStatus.SUCCESS)
                 .statusInfo(StatusInfo.builder().code("250").message("В обработке").build())
                 .build();
@@ -103,6 +146,8 @@ class ExecuteResponseHandlerTest {
         handler.handle(CORR_ID, IDEMP_KEY, ticket);
 
         assertThat(statusRepo.find(BCH_OP, "PPRB_PROCESSING")).isNotNull();
+        // turn_docdata не сохраняется на промежуточном статусе.
+        assertThat(turnDocdataRepo.findByOperationId(UPD_UID)).isEmpty();
         assertThat(callback.sent).isEmpty();
     }
 
@@ -116,22 +161,23 @@ class ExecuteResponseHandlerTest {
     }
 
     @Test
-    void missingTurnDocdataStillUpdatesStatusButCallbackHasNullIds() {
-        // нет turn_docdata в репозитории под этим updUID
-        turnDocdataRepo = new InMemoryTurnDocdataRepository();
-        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, callback);
+    void missingStatusRowStillUpdatesStatusButCallbackHasNullIds() {
+        // нет PPRB_STARTED в репозитории под этим updUID — резолв провалится
+        statusRepo = new InMemoryStatusWalletTurnRepository();
+        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, parser, callback);
 
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID("UNKNOWN-UID")
+                .operationDto(OPERATION_DTO_JSON)
                 .resultStatus(ResultStatus.SUCCESS)
                 .statusInfo(StatusInfo.builder().code("300").build())
                 .build();
 
         handler.handle(CORR_ID, IDEMP_KEY, ticket);
 
-        // Запись о статусе ушла без ccWalletTurnObjectId / ccTransactionId
-        assertThat(statusRepo.all()).hasSize(1);
-        // Callback всё равно отправлен (финальное состояние), но без id
+        // Запись о статусе ушла без ccWalletTurnObjectId — InMemory skip-ает её
+        // (см. InMemoryStatusWalletTurnRepository.upsertStatus → ключ строит из null).
+        // Callback всё равно отправлен (финальное состояние), но без bchOpId/txId.
         assertThat(callback.sent).hasSize(1);
         ExecutionResult er = callback.sent.get(0);
         assertThat(er.getOperationId()).isEqualTo("UNKNOWN-UID");

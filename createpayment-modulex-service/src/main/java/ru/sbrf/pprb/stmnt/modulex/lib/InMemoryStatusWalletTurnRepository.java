@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -26,6 +27,22 @@ public class InMemoryStatusWalletTurnRepository implements StatusWalletTurnRepos
         store.put(key, u);
         log.debug("status_WalletTurn upsert: walletTurnObjectId={}, status={}, code={}, desc={}",
                 u.getCcWalletTurnObjectId(), u.getCcStatus(), u.getCcStatusCode(), u.getCcStatusDesc());
+    }
+
+    @Override
+    public Optional<StatusWalletTurnView> findFirstByOperationId(String ccOperationId) {
+        if (ccOperationId == null || ccOperationId.isBlank()) {
+            return Optional.empty();
+        }
+        return store.values().stream()
+                .filter(u -> ccOperationId.equals(u.getCcOperationId()))
+                .findFirst()
+                .map(u -> StatusWalletTurnView.builder()
+                        .ccWalletTurnObjectId(u.getCcWalletTurnObjectId())
+                        .ccOperationId(u.getCcOperationId())
+                        .ccTransactionId(u.getCcTransactionId())
+                        .ccStatus(u.getCcStatus())
+                        .build());
     }
 
     public Collection<StatusWalletTurnUpdate> all() {

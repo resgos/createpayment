@@ -45,6 +45,9 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
             packet.turnDocdata.create(CreateTurnDocdataParam.create()
                     .setCcRegisterId(d.getCcRegisterId())
                     .setCcWalletId(d.getCcWalletId())
+                    // ccWalletTurnId deprecated в нашей XML, но в корп-схеме может
+                    // быть mandatory. Кладём blockchain id — это связь с walletTurn.
+                    .setCcWalletTurnId(d.getCcBchOperationId())
                     .setCcDate(d.getCcDate())
                     .setCcOperationDay(d.getCcOperationDay())
                     .setCcOperationId(d.getCcOperationId())
@@ -118,6 +121,7 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
                     .setWhere(w -> w.ccOperationIdEq(ccOperationId))
                     .withCcRegisterId()
                     .withCcWalletId()
+                    .withCcWalletTurnId()
                     .withCcDate()
                     .withCcOperationDay()
                     .withCcOperationId()
@@ -163,6 +167,9 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
         return TurnDocdataDraft.builder()
                 .ccRegisterId(g.getCcRegisterId())
                 .ccWalletId(g.getCcWalletId())
+                // ccWalletTurnId — deprecated, но мы туда положили blockchain id
+                // (см. setCcWalletTurnId(d.getCcBchOperationId()) в save).
+                .ccBchOperationId(g.getCcWalletTurnId())
                 .ccDate(g.getCcDate())
                 .ccOperationDay(g.getCcOperationDay())
                 .ccOperationId(g.getCcOperationId())

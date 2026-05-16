@@ -70,7 +70,10 @@ public class CreatePaymentLibrary {
         String rqUID = request.getRqUID();
         LocalDateTime rqTm = request.getRqTm() != null ? request.getRqTm() : LocalDateTime.now(AppConfig.ZONE_ID);
 
-        Map<String, Participant> bicDirectory = loadBicDirectory(rqUID);
+        // DocData Enrich (NSI.bicDirectory) ВРЕМЕННО ОТКЛЮЧЁН — наполняемся только из FSKK/EPK/SFS.
+        // Для включения: раскомментировать loadBicDirectory и передачу в processOne.
+        // Map<String, Participant> bicDirectory = loadBicDirectory(rqUID);
+        Map<String, Participant> bicDirectory = Map.of();
 
         List<ExecutionResult> results = new ArrayList<>(request.getWalletTurns().size());
         for (WalletTurnInput ref : request.getWalletTurns()) {
@@ -86,13 +89,29 @@ public class CreatePaymentLibrary {
     }
 
     /**
-     * Один шаг пайплайна: lookup → enrichment → pacs.008 → PGW.
-     * Возвращает фиксированный сжатый ExecutionResult.
+     * Один шаг пайплайна. Жизненный цикл status_WalletTurn в синхронной части:
+     * <ol>
+     *   <li>{@code PPRB_GET}     — валидация прошла, сгенерированы ccOperationId / ccTransactionId.</li>
+     *   <li>enrichment + pacs.008 + send to PGW.</li>
+     *   <li>{@code PPRB_STARTED} — PGW принял (transferUpd вернул SUCCESS).</li>
+     * </ol>
+     *
+     * <p>{@code turn_docdata} в этой фазе НЕ сохраняем — он будет создан в
+     * {@link ExecuteResponseHandler} после прихода квитанции от PGW,
+     * с данными уже из callback-payload.</p>
+     *
+     * <p>Возвращаем PPRB_PROCESSING — clients остаются в курсе, что финал
+     * придёт квитанцией. При любой ошибке до PGW — PPRB_FAILED.</p>
      */
     private ExecutionResult processOne(WalletTurnInput ref, String rqUID, LocalDateTime rqTm,
                                        Map<String, Participant> bicDirectory) {
         String bchOpId = ref != null ? ref.getCcBchOperationId() : null;
         String contractId = ref != null ? ref.getCcContractId() : null;
+
+        // ID-ы генерим до try — чтобы catch-fallback мог записать PPRB_FAILED
+        // со всеми тремя mandatory полями в DataSpace.
+        String txId = idGenerator.transactionId();
+        String operationId = idGenerator.operationId();
 
         try {
             simpleValidator.requireNonNull(ref, "walletTurn");
@@ -102,30 +121,25 @@ public class CreatePaymentLibrary {
                     .orElseThrow(() -> new IllegalStateException(
                             "WalletTurn not found for ccBchOperationId=" + bchOpId));
 
-            String txId = idGenerator.transactionId();
-            String operationId = idGenerator.operationId();
+            // 1. PPRB_GET — приняли запрос, ID-ы есть.
+            persistStatus(bchOpId, operationId, txId,
+                    ExecutionStatus.PPRB_GET.name(), null, null);
 
             TurnDocdataDraft draft = assembleDraft(wt, contractId, rqTm, txId, operationId, rqUID);
             Map<String, Sfs> sfsCache = new HashMap<>();
             enrichDt(draft, wt.getCcRegisterDt(), rqUID, sfsCache);
             enrichKt(draft, wt.getCcRegisterKt(), rqUID, sfsCache);
-            applyBicDirectory(draft, bicDirectory);
+            // DocData Enrich ОТКЛЮЧЁН — bicDirectory всегда пустой:
+            // applyBicDirectory(draft, bicDirectory);
             applyContraFromKt(draft);
 
             String xml = pacs008Builder.build(draft);
             draft.setPacs008Xml(xml);
             sendToPgw(draft, xml);
 
-            // PGW принял — фиксируем draft и статус PROCESSING. Финальный
-            // PPRB_EXECUTED/PPRB_FAILED придёт асинхронно квитанцией PGW.
-            turnDocdataRepository.save(draft);
-            statusWalletTurnRepository.upsertStatus(StatusWalletTurnUpdate.builder()
-                    .ccWalletTurnObjectId(bchOpId)
-                    .ccOperationId(operationId)
-                    .ccTransactionId(txId)
-                    .ccStatus(ExecutionStatus.PPRB_PROCESSING.name())
-                    .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID))
-                    .build());
+            // 2. PPRB_STARTED — PGW принял pacs.008. Ждём async-квитанцию.
+            persistStatus(bchOpId, operationId, txId,
+                    ExecutionStatus.PPRB_STARTED.name(), null, null);
 
             return ExecutionResult.builder()
                     .transactionId(txId)
@@ -137,26 +151,36 @@ public class CreatePaymentLibrary {
                     .build();
         } catch (Exception e) {
             log.warn("processOne failed for ccBchOperationId={}: {}", bchOpId, e.getMessage());
-            // Если успели сгенерировать ID — кладём негативный статус сразу.
             if (bchOpId != null) {
                 try {
-                    statusWalletTurnRepository.upsertStatus(StatusWalletTurnUpdate.builder()
-                            .ccWalletTurnObjectId(bchOpId)
-                            .ccStatus(ExecutionStatus.PPRB_FAILED.name())
-                            .ccStatusDesc(e.getMessage())
-                            .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID))
-                            .build());
+                    persistStatus(bchOpId, operationId, txId,
+                            ExecutionStatus.PPRB_FAILED.name(), null, e.getMessage());
                 } catch (Exception inner) {
                     log.warn("Failed to persist FAILED status: {}", inner.getMessage());
                 }
             }
             return ExecutionResult.builder()
+                    .transactionId(txId)
+                    .operationId(operationId)
                     .bchOperationId(bchOpId)
                     .contractId(contractId)
                     .resultStatus(ExecutionStatus.PPRB_FAILED)
                     .statusDescription(e.getMessage())
                     .build();
         }
+    }
+
+    private void persistStatus(String walletTurnObjectId, String operationId, String transactionId,
+                               String ccStatus, String code, String desc) {
+        statusWalletTurnRepository.upsertStatus(StatusWalletTurnUpdate.builder()
+                .ccWalletTurnObjectId(walletTurnObjectId)
+                .ccOperationId(operationId)
+                .ccTransactionId(transactionId)
+                .ccStatus(ccStatus)
+                .ccStatusCode(code)
+                .ccStatusDesc(desc)
+                .sysLastChangeDate(LocalDateTime.now(AppConfig.ZONE_ID))
+                .build());
     }
 
     private TurnDocdataDraft assembleDraft(WalletTurn wt, String contractIdOverride,
@@ -205,6 +229,8 @@ public class CreatePaymentLibrary {
         return b.build();
     }
 
+    /** ВРЕМЕННО ОТКЛЮЧЕНО (см. execute) — DocData Enrich по NSI.bicDirectory не дёргается. */
+    @SuppressWarnings("unused")
     private Map<String, Participant> loadBicDirectory(String rqUID) {
         try {
             GetSberIntegrationResult res = sberClient.getBicDirectory(rqUID);
@@ -325,6 +351,8 @@ public class CreatePaymentLibrary {
         return sfs.getCodeOSB() != null ? sfs.getCodeOSB() : sfs.getCodeTB();
     }
 
+    /** ВРЕМЕННО ОТКЛЮЧЕНО (см. processOne) — обогащение наименования банка из BIC-справочника. */
+    @SuppressWarnings("unused")
     private void applyBicDirectory(TurnDocdataDraft d, Map<String, Participant> bicDirectory) {
         if (bicDirectory == null || bicDirectory.isEmpty()) return;
         Participant dtBank = d.getCcDTBIC() != null ? bicDirectory.get(d.getCcDTBIC()) : null;

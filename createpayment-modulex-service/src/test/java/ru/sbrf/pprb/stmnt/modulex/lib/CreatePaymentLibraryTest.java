@@ -79,7 +79,7 @@ class CreatePaymentLibraryTest {
     }
 
     @Test
-    void processingResultAndPersistedRowsWhenPipelineSucceeds() {
+    void syncWritesGetAndStartedStatusesWhenPipelineSucceeds() {
         walletTurnRepository.put(sampleWalletTurn());
         mockSber(REG_DT, UCP_DT, "acc-dt", "bic-dt", "corr-dt", "ООО Плательщик", "INN-1", "KPP-1");
         mockSber(REG_KT, UCP_KT, "acc-kt", "bic-kt", "corr-kt", "ООО Получатель", "INN-2", "KPP-2");
@@ -88,6 +88,7 @@ class CreatePaymentLibraryTest {
 
         assertThat(response.getExecutionResults()).hasSize(1);
         ExecutionResult result = response.getExecutionResults().get(0);
+        // Синхронный возврат — всегда PPRB_PROCESSING (финальный статус придёт от PGW).
         assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
         assertThat(result.getStatusDescription()).isNull();
         assertThat(result.getTransactionId()).isEqualTo(GEN_TX_ID);
@@ -95,12 +96,19 @@ class CreatePaymentLibraryTest {
         assertThat(result.getBchOperationId()).isEqualTo(BCH_OP_1);
         assertThat(result.getContractId()).isEqualTo(CONTRACT_1);
 
-        // turn_docdata сохранён, status_WalletTurn в PROCESSING
-        assertThat(turnDocdataRepository.findByOperationId(GEN_OPERATION_ID)).isPresent();
-        StatusWalletTurnUpdate row = statusRepository.find(BCH_OP_1, "PPRB_PROCESSING");
-        assertThat(row).isNotNull();
-        assertThat(row.getCcOperationId()).isEqualTo(GEN_OPERATION_ID);
-        assertThat(row.getCcTransactionId()).isEqualTo(GEN_TX_ID);
+        // turn_docdata в синке НЕ сохраняется — будет создан после callback от PGW.
+        assertThat(turnDocdataRepository.findByOperationId(GEN_OPERATION_ID)).isEmpty();
+
+        // status_WalletTurn содержит PPRB_GET (после валидации) и PPRB_STARTED (после PGW).
+        StatusWalletTurnUpdate getRow = statusRepository.find(BCH_OP_1, "PPRB_GET");
+        assertThat(getRow).isNotNull();
+        assertThat(getRow.getCcOperationId()).isEqualTo(GEN_OPERATION_ID);
+        assertThat(getRow.getCcTransactionId()).isEqualTo(GEN_TX_ID);
+
+        StatusWalletTurnUpdate startedRow = statusRepository.find(BCH_OP_1, "PPRB_STARTED");
+        assertThat(startedRow).isNotNull();
+        assertThat(startedRow.getCcOperationId()).isEqualTo(GEN_OPERATION_ID);
+        assertThat(startedRow.getCcTransactionId()).isEqualTo(GEN_TX_ID);
     }
 
     @Test
@@ -113,8 +121,9 @@ class CreatePaymentLibraryTest {
         assertThat(result.getStatusDescription()).contains("WalletTurn not found");
         assertThat(result.getBchOperationId()).isEqualTo(BCH_OP_1);
         assertThat(result.getContractId()).isEqualTo(CONTRACT_1);
-        assertThat(result.getTransactionId()).isNull();
-        assertThat(result.getOperationId()).isNull();
+        // ID-ы генерируются до try — даже при ошибке они в результате есть.
+        assertThat(result.getTransactionId()).isEqualTo(GEN_TX_ID);
+        assertThat(result.getOperationId()).isEqualTo(GEN_OPERATION_ID);
 
         // FAILED-статус всё равно зафиксирован
         StatusWalletTurnUpdate row = statusRepository.find(BCH_OP_1, "PPRB_FAILED");
@@ -144,8 +153,9 @@ class CreatePaymentLibraryTest {
 
         assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
         assertThat(result.getStatusDescription()).contains("PGW unreachable");
-        // PROCESSING не сохраняется — только FAILED
-        assertThat(statusRepository.find(BCH_OP_1, "PPRB_PROCESSING")).isNull();
+        // PPRB_GET записался (после валидации), PPRB_STARTED НЕ записался (PGW бросил), PPRB_FAILED есть.
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_GET")).isNotNull();
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_STARTED")).isNull();
         assertThat(statusRepository.find(BCH_OP_1, "PPRB_FAILED")).isNotNull();
     }
 
@@ -172,38 +182,6 @@ class CreatePaymentLibraryTest {
         assertThat(results).hasSize(2);
         assertThat(results.get(0).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
         assertThat(results.get(1).getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
-    }
-
-    @Test
-    void draftCarriesCcDivisionIdAndCcReceiptDate() {
-        walletTurnRepository.put(sampleWalletTurn());
-        // FSKK_DT с явным divisionId — он должен попасть в драфт
-        GetSberIntegrationResult.Fskk fskk = new GetSberIntegrationResult.Fskk();
-        fskk.setAccNum("acc-dt");
-        fskk.setAccBic("bic-dt");
-        fskk.setAccBankCorrAcc("corr-dt");
-        fskk.setUcpId(UCP_DT);
-        fskk.setDivisionId("38903801697");
-        GetSberIntegrationResult byReg = new GetSberIntegrationResult();
-        byReg.setFskk(fskk);
-        when(sberClient.getByRegisterId(eq(REG_DT), anyString())).thenReturn(byReg);
-        GetSberIntegrationResult.Epk epk = new GetSberIntegrationResult.Epk();
-        epk.setOrgName("DT");
-        GetSberIntegrationResult byUcp = new GetSberIntegrationResult();
-        byUcp.setEpk(List.of(epk));
-        when(sberClient.getByUcpId(eq(UCP_DT), anyString())).thenReturn(byUcp);
-        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
-
-        LocalDateTime before = LocalDateTime.now().minusSeconds(2);
-        library.execute(baseRequest(BCH_OP_1, CONTRACT_1));
-        LocalDateTime after = LocalDateTime.now().plusSeconds(2);
-
-        TurnDocdataDraft persisted = turnDocdataRepository.findByOperationId(GEN_OPERATION_ID).orElseThrow();
-        // ccDivisionId резолвлен из FSKK_DT.divisionId
-        assertThat(persisted.getCcDivisionId()).isEqualTo("38903801697");
-        // ccReceiptDate — момент приёма execute (now)
-        assertThat(persisted.getCcReceiptDate()).isNotNull();
-        assertThat(persisted.getCcReceiptDate()).isAfter(before).isBefore(after);
     }
 
     @Test

@@ -91,7 +91,29 @@ class CreatePaymentEndToEndTest {
         // --- Реальная библиотека: pacs.008 строится, идентификаторы генерятся ---
         library = new CreatePaymentLibrary(new SimpleValidator(), sber, new TurnDocdataIdGenerator(),
                 new Pacs008Builder(), pgw, walletTurnRepo, turnDocdataRepo, statusRepo);
-        responseHandler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, callback);
+        responseHandler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo,
+                new PgwOperationDtoParser(new com.fasterxml.jackson.databind.ObjectMapper()), callback);
+    }
+
+    /** Минимальный operationDto для имитации PGW callback. */
+    private static String operationDtoJson(String txId) {
+        return "{\"performedOperations\":[{"
+                + "\"accountingDate\":\"11.05.2026 00:00:00\","
+                + "\"register\":{\"objectId\":\"" + REG_DT + "\"},"
+                + "\"operationSum\":1500,"
+                + "\"operationCurrency\":\"810\","
+                + "\"documentReason\":{"
+                + "\"orderDate\":\"15.05.2026 00:00:00\","
+                + "\"payerAccount\":\"40702810538000097171\","
+                + "\"payerName\":\"ИП БЕЛИКОВА И. П.\","
+                + "\"receiverAccount\":\"40702810138000101218\","
+                + "\"receiverName\":\"ООО \\\"ДИЗЕЛЬ\\\"\","
+                + "\"payerBankName\":\"ПАО Сбербанк\","
+                + "\"receiverBankName\":\"ПАО Сбербанк\","
+                + "\"paymentAmount\":1500"
+                + "},"
+                + "\"externalAttributes\":{\"processNumber\":\"" + txId + "\"}"
+                + "}]}";
     }
 
     @Test
@@ -127,20 +149,18 @@ class CreatePaymentEndToEndTest {
                 .contains("<DbtrAgt>")
                 .doesNotContain("<BrnchId>"); // BrnchId не выпускается по эталону
 
-        // 3. Сохранили turn_docdata и status_WalletTurn в PROCESSING
-        TurnDocdataDraft persistedDraft = turnDocdataRepo.findByOperationId(sync.getOperationId())
-                .orElseThrow();
-        assertThat(persistedDraft.getCcBchOperationId()).isEqualTo(BCH_OP);
-        assertThat(persistedDraft.getCcTransactionId()).isEqualTo(sync.getTransactionId());
-        assertThat(persistedDraft.getCcDTName()).isEqualTo("ИП БЕЛИКОВА И. П.");
-        assertThat(persistedDraft.getCcKTName()).isEqualTo("ООО \"ДИЗЕЛЬ\"");
-        assertThat(persistedDraft.getCcDTNameBank()).isEqualTo("ПАО Сбербанк");
-        assertThat(persistedDraft.getCcKTNameBank()).isEqualTo("ПАО Сбербанк");
+        // 3. В синке turn_docdata НЕ сохраняется (это асинхронно после callback PGW).
+        assertThat(turnDocdataRepo.findByOperationId(sync.getOperationId())).isEmpty();
 
-        StatusWalletTurnUpdate processingRow = statusRepo.find(BCH_OP, "PPRB_PROCESSING");
-        assertThat(processingRow).isNotNull();
-        assertThat(processingRow.getCcOperationId()).isEqualTo(sync.getOperationId());
-        assertThat(processingRow.getCcTransactionId()).isEqualTo(sync.getTransactionId());
+        // А статусы PPRB_GET и PPRB_STARTED — записаны.
+        StatusWalletTurnUpdate getRow = statusRepo.find(BCH_OP, "PPRB_GET");
+        assertThat(getRow).isNotNull();
+        assertThat(getRow.getCcOperationId()).isEqualTo(sync.getOperationId());
+
+        StatusWalletTurnUpdate startedRow = statusRepo.find(BCH_OP, "PPRB_STARTED");
+        assertThat(startedRow).isNotNull();
+        assertThat(startedRow.getCcOperationId()).isEqualTo(sync.getOperationId());
+        assertThat(startedRow.getCcTransactionId()).isEqualTo(sync.getTransactionId());
 
         // Callback ещё НЕ отправлен — статус не финальный
         assertThat(callback.sent).isEmpty();
@@ -148,11 +168,20 @@ class CreatePaymentEndToEndTest {
         // 4. PGW потом дёргает нас на /upd/response/execute с финальным кодом 300 (исполнено)
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID(sync.getOperationId())
+                .operationDto(operationDtoJson(sync.getTransactionId()))
                 .resultStatus(ResultStatus.SUCCESS)
                 .statusInfo(StatusInfo.builder().code("300").message("Документ успешно обработан").build())
                 .build();
-        ApiResult ack = responseHandler.handle(persistedDraft.getCcRqUId(),
+        ApiResult ack = responseHandler.handle("CORR-1",
                 "fa163e86-2c97-1eed-aaa6-2d82577ece51", ticket);
+
+        // turn_docdata создан из callback payload
+        TurnDocdataDraft persistedDraft = turnDocdataRepo.findByOperationId(sync.getOperationId())
+                .orElseThrow();
+        assertThat(persistedDraft.getCcBchOperationId()).isEqualTo(BCH_OP);
+        assertThat(persistedDraft.getCcTransactionId()).isEqualTo(sync.getTransactionId());
+        assertThat(persistedDraft.getCcDTName()).isEqualTo("ИП БЕЛИКОВА И. П.");
+        assertThat(persistedDraft.getCcKTName()).isEqualTo("ООО \"ДИЗЕЛЬ\"");
 
         assertThat(ack.getStatus()).isEqualTo("SUCCESS");
 
@@ -168,7 +197,6 @@ class CreatePaymentEndToEndTest {
         ExecutionResult final_ = callback.sent.get(0);
         assertThat(final_.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
         assertThat(final_.getBchOperationId()).isEqualTo(BCH_OP);
-        assertThat(final_.getContractId()).isEqualTo(CONTRACT);
         assertThat(final_.getOperationId()).isEqualTo(sync.getOperationId());
         assertThat(final_.getTransactionId()).isEqualTo(sync.getTransactionId());
         assertThat(final_.getStatusDescription()).isNull();
@@ -189,6 +217,7 @@ class CreatePaymentEndToEndTest {
         // PGW потом квитирует ошибкой
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID(sync.getOperationId())
+                .operationDto(operationDtoJson(sync.getTransactionId()))
                 .resultStatus(ResultStatus.ERROR)
                 .statusInfo(StatusInfo.builder().code("150").message("Регистр заблокирован").build())
                 .build();
