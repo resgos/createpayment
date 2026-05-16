@@ -70,10 +70,7 @@ public class CreatePaymentLibrary {
         String rqUID = request.getRqUID();
         LocalDateTime rqTm = request.getRqTm() != null ? request.getRqTm() : LocalDateTime.now(AppConfig.ZONE_ID);
 
-        // DocData Enrich (NSI.bicDirectory) ВРЕМЕННО ОТКЛЮЧЁН — наполняемся только из FSKK/EPK/SFS.
-        // Для включения: раскомментировать loadBicDirectory и передачу в processOne.
-        // Map<String, Participant> bicDirectory = loadBicDirectory(rqUID);
-        Map<String, Participant> bicDirectory = Map.of();
+        Map<String, Participant> bicDirectory = loadBicDirectory(rqUID);
 
         List<ExecutionResult> results = new ArrayList<>(request.getWalletTurns().size());
         for (WalletTurnInput ref : request.getWalletTurns()) {
@@ -129,8 +126,7 @@ public class CreatePaymentLibrary {
             Map<String, Sfs> sfsCache = new HashMap<>();
             enrichDt(draft, wt.getCcRegisterDt(), rqUID, sfsCache);
             enrichKt(draft, wt.getCcRegisterKt(), rqUID, sfsCache);
-            // DocData Enrich ОТКЛЮЧЁН — bicDirectory всегда пустой:
-            // applyBicDirectory(draft, bicDirectory);
+            applyBicDirectory(draft, bicDirectory);
             applyContraFromKt(draft);
 
             String xml = pacs008Builder.build(draft);
@@ -229,8 +225,6 @@ public class CreatePaymentLibrary {
         return b.build();
     }
 
-    /** ВРЕМЕННО ОТКЛЮЧЕНО (см. execute) — DocData Enrich по NSI.bicDirectory не дёргается. */
-    @SuppressWarnings("unused")
     private Map<String, Participant> loadBicDirectory(String rqUID) {
         try {
             GetSberIntegrationResult res = sberClient.getBicDirectory(rqUID);
@@ -351,8 +345,6 @@ public class CreatePaymentLibrary {
         return sfs.getCodeOSB() != null ? sfs.getCodeOSB() : sfs.getCodeTB();
     }
 
-    /** ВРЕМЕННО ОТКЛЮЧЕНО (см. processOne) — обогащение наименования банка из BIC-справочника. */
-    @SuppressWarnings("unused")
     private void applyBicDirectory(TurnDocdataDraft d, Map<String, Participant> bicDirectory) {
         if (bicDirectory == null || bicDirectory.isEmpty()) return;
         Participant dtBank = d.getCcDTBIC() != null ? bicDirectory.get(d.getCcDTBIC()) : null;
