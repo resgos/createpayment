@@ -45,8 +45,9 @@ public class DataSpaceTurnDocdataRepository implements TurnDocdataRepository {
             packet.turnDocdata.create(CreateTurnDocdataParam.create()
                     .setCcRegisterId(d.getCcRegisterId())
                     .setCcWalletId(d.getCcWalletId())
-                    // ccWalletTurnId deprecated в нашей XML, но в корп-схеме может
-                    // быть mandatory. Кладём blockchain id — это связь с walletTurn.
+                    // ccWalletTurnId в TurnDocdata-модели — обычное поле (не mandatory, не deprecated).
+                    // Используем его как контейнер для blockchain id (ccBchOperationId),
+                    // чтобы потом в findByOperationId можно было восстановить связь с walletTurn.
                     .setCcWalletTurnId(d.getCcBchOperationId())
                     .setCcDate(d.getCcDate())
                     .setCcOperationDay(d.getCcOperationDay())

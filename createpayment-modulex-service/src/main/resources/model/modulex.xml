@@ -3,7 +3,6 @@
     <import type="HISTORY-VERSION" file=""/>
 
     <class name="RegisterWallet" label="register_wallet. Регистр кошелька">
-        <!-- НОВЫЕ ПОЛЯ (mandatory снят, оставлен только на ранее существовавших ccRegisterId/ccCurrency) -->
         <property name="ccOwnerId" type="String" length="512" label="TokenOwner кошелька в blockchain"/>
         <property name="ccMemberId" type="String" length="128" label="memberId участника"/>
         <property name="ccRegisterId" type="String" length="100" mandatory="true" label="Идентификатор регистра в ФСКК"/>
@@ -23,7 +22,6 @@
         <property name="ccMaxDealAmount" type="BigDecimal" length="17" scale="2" label="Максимальная сумма сделки"/>
         <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
 
-        <!-- DEPRECATED ПОЛЯ -->
         <property name="ccUcpId" type="String" length="254" isDeprecated="true" label="Идентификатор клиента в ЕПК (deprecated)"/>
         <property name="ccWalletId" type="String" length="254" isDeprecated="true" label="Идентификатор кошелька в Blockchain (deprecated)"/>
         <property name="ccDigitalId" type="String" length="254" isDeprecated="true" label="Идентификатор клиента в ЕФС (deprecated)"/>
@@ -164,7 +162,6 @@
     </class>
 
     <class name="WalletTurn" label="walletTurn. Оборот кошелька">
-        <!-- НОВЫЕ ПОЛЯ (все без mandatory) -->
         <property name="ccDate" type="LocalDateTime" label="Дата и время операции из blockchain"/>
         <property name="ccBchOperationId" type="String" length="128" label="Идентификатор операции blockchain"/>
         <property name="ccTxId" type="String" length="128" label="Идентификатор blockchain-транзакции"/>
@@ -184,16 +181,11 @@
         <property name="ccSignature" type="String" length="2000" label="Подпись транзакции в блокчейн"/>
         <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
 
-        <!-- DEPRECATED ПОЛЯ -->
         <property name="ccWalletTurnId" type="String" length="128" isDeprecated="true" label="Идентификатор платежа в кошельке (deprecated)"/>
         <property name="ccWalletDt" type="String" length="254" isDeprecated="true" label="Кошелек по Дт (deprecated)"/>
         <property name="ccWalletKt" type="String" length="254" isDeprecated="true" label="Кошелек по Кт (deprecated)"/>
 
-        <!--
-          Уникальность по паре (ccBchOperationId, ccContractId).
-          В БД соответствует частичному уник-индексу:
-          WHERE sys_isdeleted = false AND ccbchoperationid IS NOT NULL AND cccontractid IS NOT NULL.
-        -->
+        <!-- unique по паре (ccBchOperationId, ccContractId); partial-условие sys_isdeleted=false AND обе not null — на уровне DDL -->
         <index unique="true">
             <property name="ccBchOperationId"/>
             <property name="ccContractId"/>
@@ -223,26 +215,24 @@
     </class>
 
     <class name="StatusWalletTurn" label="status_WalletTurn. Статус оборота кошелька">
-        <!-- НОВЫЕ ПОЛЯ -->
-        <property name="ccWalletTurnObjectId" type="String" length="128" mandatory="true" label="Внешний идентификатор платежа в blockchain"/>
+        <property name="ccWalletTurnObjectId" type="String" length="128" mandatory="true" default-value="" label="Внешний идентификатор платежа в blockchain"/>
         <property name="ccOperationId" type="String" length="128" label="DOCGUID банковского документа"/>
-        <property name="ccTransactionId" type="String" length="128" label="serviceObjectId"/>
-        <property name="ccStatus" type="String" length="64" mandatory="true" label="Статус платежа из blockchain в банковском процессе"/>
+        <property name="ccTransactionId" type="String" length="128" label="serviceObjectId банковского оборота"/>
+        <property name="ccStatus" type="String" length="64" mandatory="true" default-value="UNKNOWN" label="Статус платежа"/>
         <property name="ccStatusCode" type="String" length="128" label="Код ошибки"/>
-        <property name="ccStatusDesc" type="String" length="4000" label="Описание статуса или ошибки"/>
-        <property name="sysLastChangeDate" type="LocalDateTime" mandatory="true" label="Дата последнего изменения записи"/>
+        <property name="ccStatusDesc" type="String" length="4000" label="Описание статуса"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
 
-        <!-- DEPRECATED ПОЛЯ -->
         <property name="ccWalletTurnId" type="String" length="128" isDeprecated="true" label="Идентификатор платежа в кошельке (deprecated)"/>
         <property name="ccRqTm" type="Date" isDeprecated="true" label="RqTm (deprecated)"/>
         <property name="ccRqUId" type="String" length="128" isDeprecated="true" label="RqUId (deprecated)"/>
 
-        <index unique="true">
-            <property name="ccWalletTurnObjectId"/>
-            <property name="ccStatus"/>
-        </index>
         <index unique="false">
             <property name="ccWalletTurnObjectId"/>
+        </index>
+        <index unique="false">
+            <property name="ccTransactionId"/>
+            <property name="ccStatus"/>
         </index>
         <index unique="false">
             <property name="ccOperationId"/>
@@ -252,50 +242,6 @@
         </index>
         <index unique="false">
             <property name="ccStatus"/>
-        </index>
-    </class>
-
-    <class name="ResponseTicketIdempotency" label="responseTicket_idempotency. Защита от дублей PGW callback">
-        <property name="ccIdempotencyKey" type="String" length="64" mandatory="true" label="idempotencyKey REST-вызова от PGW"/>
-        <property name="ccCorrelationId" type="String" length="64" label="correlationId = requestId исходного УРД"/>
-        <property name="ccUpdUID" type="String" length="64" label="updUID — ID УРД, по которому пришла квитанция"/>
-        <property name="ccApiResultStatus" type="String" length="32" label="Статус ApiResult: SUCCESS/ERROR"/>
-        <property name="ccApiResultMessage" type="String" length="4000" label="Сообщение ApiResult"/>
-        <property name="ccProcessedAt" type="LocalDateTime" mandatory="true" label="Время первичной обработки"/>
-        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
-
-        <index unique="true">
-            <property name="ccIdempotencyKey"/>
-        </index>
-        <index unique="false">
-            <property name="ccUpdUID"/>
-        </index>
-        <index unique="false">
-            <property name="ccProcessedAt"/>
-        </index>
-    </class>
-
-    <class name="UpdOutbox" label="upd_outbox. Гарант-доставка УРД в PGW (background retry)">
-        <property name="ccRequestId" type="String" length="64" mandatory="true" label="requestId УРД — стабилен между попытками"/>
-        <property name="ccUpdUID" type="String" length="64" mandatory="true" label="updUID — ID УРД"/>
-        <property name="ccPayload" type="String" length="32000" mandatory="true" label="Сериализованный UPDDTO (JSON)"/>
-        <property name="ccStatus" type="String" length="32" mandatory="true" label="PENDING / SENT / GIVEUP"/>
-        <property name="ccAttempts" type="Integer" mandatory="true" label="Сколько попыток уже сделано"/>
-        <property name="ccMaxAttempts" type="Integer" mandatory="true" label="Лимит попыток для этого УРД"/>
-        <property name="ccNextRetryAt" type="LocalDateTime" label="Когда следующая попытка"/>
-        <property name="ccLastError" type="String" length="4000" label="Текст последней ошибки"/>
-        <property name="ccCreatedAt" type="LocalDateTime" mandatory="true" label="Когда поставлен в outbox"/>
-        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
-
-        <index unique="true">
-            <property name="ccRequestId"/>
-        </index>
-        <index unique="false">
-            <property name="ccStatus"/>
-            <property name="ccNextRetryAt"/>
-        </index>
-        <index unique="false">
-            <property name="ccUpdUID"/>
         </index>
     </class>
 
@@ -314,7 +260,6 @@
         </index>
     </class>
 
-    <!-- DEPRECATED класс, заменён на Block -->
     <class name="Blocks" label="blocks. Обработанные блоки (deprecated)" isDeprecated="true">
         <property name="ccLastProcessedBlockNumber" type="String" length="64" mandatory="true" label="Номер последнего обработанного блока"/>
         <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
@@ -345,11 +290,15 @@
         <property name="ccName" type="String" length="255" label="Наименование типа фида"/>
         <property name="ccDescription" type="String" length="1000" label="Описание фида"/>
         <property name="ccFields" type="String" length="4000" label="Параметры фида (JSON)"/>
+        <property name="ccOwnerMemberId" type="String" length="128" label="memberId банка-владельца фида"/>
         <property name="ccStatus" type="String" length="64" label="Статус фида"/>
         <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
 
         <index unique="true">
             <property name="ccFeedId"/>
+        </index>
+        <index unique="false">
+            <property name="ccOwnerMemberId"/>
         </index>
         <index unique="false">
             <property name="ccStatus"/>
@@ -458,6 +407,50 @@
         </index>
         <index unique="false">
             <property name="ccRegulationId"/>
+        </index>
+    </class>
+
+    <class name="ResponseTicketIdempotency" label="responseTicket_idempotency. Защита от дублей PGW callback">
+        <property name="ccIdempotencyKey" type="String" length="64" mandatory="true" label="idempotencyKey REST-вызова от PGW"/>
+        <property name="ccCorrelationId" type="String" length="64" label="correlationId = requestId исходного УРД"/>
+        <property name="ccUpdUID" type="String" length="64" label="updUID — ID УРД, по которому пришла квитанция"/>
+        <property name="ccApiResultStatus" type="String" length="32" label="Статус ApiResult: SUCCESS/ERROR"/>
+        <property name="ccApiResultMessage" type="String" length="4000" label="Сообщение ApiResult"/>
+        <property name="ccProcessedAt" type="LocalDateTime" mandatory="true" label="Время первичной обработки"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccIdempotencyKey"/>
+        </index>
+        <index unique="false">
+            <property name="ccUpdUID"/>
+        </index>
+        <index unique="false">
+            <property name="ccProcessedAt"/>
+        </index>
+    </class>
+
+    <class name="UpdOutbox" label="upd_outbox. Гарант-доставка УРД в PGW (background retry)">
+        <property name="ccRequestId" type="String" length="64" mandatory="true" label="requestId УРД — стабилен между попытками"/>
+        <property name="ccUpdUID" type="String" length="64" mandatory="true" label="updUID — ID УРД"/>
+        <property name="ccPayload" type="Text" mandatory="true" label="Сериализованный UPDDTO (JSON)"/>
+        <property name="ccStatus" type="String" length="32" mandatory="true" label="PENDING / SENT / GIVEUP"/>
+        <property name="ccAttempts" type="Integer" mandatory="true" label="Сколько попыток уже сделано"/>
+        <property name="ccMaxAttempts" type="Integer" mandatory="true" label="Лимит попыток для этого УРД"/>
+        <property name="ccNextRetryAt" type="LocalDateTime" label="Когда следующая попытка"/>
+        <property name="ccLastError" type="String" length="4000" label="Текст последней ошибки"/>
+        <property name="ccCreatedAt" type="LocalDateTime" mandatory="true" label="Когда поставлен в outbox"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccRequestId"/>
+        </index>
+        <index unique="false">
+            <property name="ccStatus"/>
+            <property name="ccNextRetryAt"/>
+        </index>
+        <index unique="false">
+            <property name="ccUpdUID"/>
         </index>
     </class>
 </model>

@@ -18,20 +18,19 @@ import java.util.Optional;
 /**
  * Реальная DataSpace-имплементация {@link StatusWalletTurnRepository}.
  *
- * <p>Работаем строго через натуральные ключи из запроса
- * ({@code ccWalletTurnId}, {@code ccOperationId}, {@code ccTransactionId},
- * {@code ccStatus}). Никаких {@code objectId} не используем — он сгенерён
- * DataSpace-ом и не имеет бизнес-смысла для нашего кейса.</p>
+ * <p><b>Маппинг полей</b>:</p>
+ * <ul>
+ *   <li>DTO {@code ccWalletTurnObjectId} (внешний blockchain id) ↔
+ *       SDK {@code ccWalletTurnObjectId} (mandatory, новое имя поля).</li>
+ *   <li>SDK поле {@code ccWalletTurnId} помечено deprecated и больше не
+ *       пишется — заменено новым {@code ccWalletTurnObjectId}.</li>
+ * </ul>
  *
- * <p>Запись статусов идемпотентна: каждый переход
- * (PPRB_GET / PPRB_STARTED / PPRB_PROCESSING / PPRB_EXECUTED / PPRB_FAILED)
- * пишется один раз благодаря уник-индексу {@code (ccWalletTurnId, ccStatus)}.
- * Повторная попытка вставки той же пары → ловим duplicate-key и молча skip-аем.</p>
- *
- * <p>В корп-SDK поле {@code ccWalletTurnObjectId} ещё НЕ сгенерировано —
- * поэтому во все вызовы идёт {@code ccWalletTurnId} (deprecated в нашей XML,
- * но реально присутствует в сгенерированных классах и в БД). В DTO имя
- * остаётся {@code ccWalletTurnObjectId} для семантической ясности; маппинг 1:1.</p>
+ * <p><b>Идемпотентность</b>: в корп-модели у {@code status_WalletTurn} нет
+ * уник-индекса по {@code (ccWalletTurnObjectId, ccStatus)} — все индексы
+ * {@code unique="false"}. Чтобы не плодить дубли на ретраях, делаем
+ * <b>search-then-create</b>: перед вставкой проверяем существование пары
+ * {@code (walletTurnObjectId, status)}. Если есть — skip.</p>
  */
 @Slf4j
 @Primary
@@ -51,9 +50,14 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
             return;
         }
         try {
+            if (existsStatus(u.getCcWalletTurnObjectId(), u.getCcStatus())) {
+                log.debug("status_WalletTurn already exists: walletTurnObjectId={}, status={} — idempotent skip",
+                        u.getCcWalletTurnObjectId(), u.getCcStatus());
+                return;
+            }
             Packet packet = new Packet();
             packet.statusWalletTurn.create(CreateStatusWalletTurnParam.create()
-                    .setCcWalletTurnId(u.getCcWalletTurnObjectId())
+                    .setCcWalletTurnObjectId(u.getCcWalletTurnObjectId())
                     .setCcOperationId(u.getCcOperationId())
                     .setCcTransactionId(u.getCcTransactionId())
                     .setCcStatus(u.getCcStatus())
@@ -64,11 +68,6 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
             log.debug("status_WalletTurn created: walletTurnObjectId={}, status={}, code={}",
                     u.getCcWalletTurnObjectId(), u.getCcStatus(), u.getCcStatusCode());
         } catch (SdkJsonRpcClientException e) {
-            if (isDuplicateKey(e)) {
-                log.debug("status_WalletTurn already exists: walletTurnObjectId={}, status={} — idempotent skip",
-                        u.getCcWalletTurnObjectId(), u.getCcStatus());
-                return;
-            }
             log.error("status_WalletTurn create FAILED via DataSpace SDK: walletTurnObjectId={}, status={}, code={}, desc={}, exception={}: {}",
                     u.getCcWalletTurnObjectId(), u.getCcStatus(),
                     u.getCcStatusCode(), u.getCcStatusDesc(),
@@ -93,13 +92,12 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
             log.debug("DataSpace searchStatusWalletTurn by ccOperationId={}", ccOperationId);
             GraphCollection<StatusWalletTurnGet> coll = dsApi.searchStatusWalletTurn(g -> g
                     .setWhere(w -> w.ccOperationIdEq(ccOperationId))
-                    .withCcWalletTurnId()
+                    .withCcWalletTurnObjectId()
                     .withCcOperationId()
                     .withCcTransactionId()
                     .withCcStatus());
             return coll.stream().findFirst().map(g -> StatusWalletTurnView.builder()
-                    // В DTO имя ccWalletTurnObjectId, в SDK — ccWalletTurnId. Маппим 1:1.
-                    .ccWalletTurnObjectId(g.getCcWalletTurnId())
+                    .ccWalletTurnObjectId(g.getCcWalletTurnObjectId())
                     .ccOperationId(g.getCcOperationId())
                     .ccTransactionId(g.getCcTransactionId())
                     .ccStatus(g.getCcStatus())
@@ -111,29 +109,15 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
     }
 
     /**
-     * Грубое распознавание duplicate-key ошибки от DataSpace SDK.
-     * Без жёсткой привязки к конкретному классу — проверяем по подстрокам в message.
+     * Проверка существования строки по натуральному ключу
+     * {@code (ccWalletTurnObjectId, ccStatus)} — для app-level дедупа.
+     * В корп-схеме уник-констрейнта на этой паре нет.
      */
-    private static boolean isDuplicateKey(Throwable e) {
-        Throwable cur = e;
-        while (cur != null) {
-            String m = cur.getMessage();
-            if (m != null) {
-                String lower = m.toLowerCase();
-                if (lower.contains("duplicate")
-                        || lower.contains("unique")
-                        || lower.contains("уник")
-                        || lower.contains("дубл")
-                        || lower.contains("already exist")) {
-                    return true;
-                }
-            }
-            String cn = cur.getClass().getSimpleName().toLowerCase();
-            if (cn.contains("duplicate") || cn.contains("unique")) {
-                return true;
-            }
-            cur = cur.getCause();
-        }
-        return false;
+    private boolean existsStatus(String walletTurnObjectId, String status) throws SdkJsonRpcClientException {
+        GraphCollection<StatusWalletTurnGet> coll = dsApi.searchStatusWalletTurn(g -> g
+                .setWhere(w -> w.ccWalletTurnObjectIdEq(walletTurnObjectId).and(w.ccStatusEq(status)))
+                .setLimit(1)
+                .withCcStatus());
+        return coll.stream().findFirst().isPresent();
     }
 }
