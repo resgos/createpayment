@@ -364,8 +364,17 @@ public class CreatePaymentLibrary {
         }
     }
 
+    /**
+     * Код тербанка (codeTB) — для msgAttributes.TB по контракту PGW
+     * ({@code String(2)}, пример {@code "13"}). Если codeTB пуст, fallback
+     * на codeOSB (доп.офис), хотя он длиннее 2 символов — лучше что-то,
+     * чем ничего.
+     *
+     * <p>Раньше использовалось приоритет codeOSB для pacs.008 BrnchId,
+     * но BrnchId из XML мы убрали — теперь поле идёт только в TB-атрибут.</p>
+     */
     private String branchCode(Sfs sfs) {
-        return sfs.getCodeOSB() != null ? sfs.getCodeOSB() : sfs.getCodeTB();
+        return sfs.getCodeTB() != null ? sfs.getCodeTB() : sfs.getCodeOSB();
     }
 
     private void applyBicDirectory(TurnDocdataDraft d, Map<String, Participant> bicDirectory) {
