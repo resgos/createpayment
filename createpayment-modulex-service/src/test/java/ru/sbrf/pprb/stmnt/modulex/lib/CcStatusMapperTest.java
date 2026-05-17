@@ -29,9 +29,10 @@ class CcStatusMapperTest {
     }
 
     @Test
-    void successWithoutCodeFallsBackToExecuted() {
-        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, null)).isEqualTo("PPRB_EXECUTED");
-        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "")).isEqualTo("PPRB_EXECUTED");
+    void successWithoutCodeFallsBackToProcessing() {
+        // Без явного кода 300/301/315 — НЕ финал. Ждём следующую квитанцию.
+        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, null)).isEqualTo("PPRB_PROCESSING");
+        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "")).isEqualTo("PPRB_PROCESSING");
     }
 
     @Test
@@ -41,16 +42,18 @@ class CcStatusMapperTest {
     }
 
     @Test
-    void unrecognizedCombinationMapsToUnknown() {
-        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "500")).isEqualTo("UNKNOWN");
-        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "199")).isEqualTo("UNKNOWN");
+    void unrecognizedCombinationMapsToProcessingOrUnknown() {
+        // SUCCESS с любым числовым кодом, не равным 300/301/315 — PROCESSING.
+        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "500")).isEqualTo("PPRB_PROCESSING");
+        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "199")).isEqualTo("PPRB_PROCESSING");
+        // ERROR с кодом вне 100..199 — UNKNOWN.
         assertThat(CcStatusMapper.map(ResultStatus.ERROR, "300")).isEqualTo("UNKNOWN");
         assertThat(CcStatusMapper.map(null, "300")).isEqualTo("UNKNOWN");
     }
 
     @Test
     void nonNumericCodeIsHandledGracefully() {
-        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "abc")).isEqualTo("PPRB_EXECUTED");
+        assertThat(CcStatusMapper.map(ResultStatus.SUCCESS, "abc")).isEqualTo("PPRB_PROCESSING");
         assertThat(CcStatusMapper.map(ResultStatus.ERROR, "abc")).isEqualTo("PPRB_FAILED");
     }
 }

@@ -56,5 +56,5 @@ public class PgwProperties {
      * <p>Без этого атрибута PGW отвечает ошибкой 102 «Срок ожидания исполнения
      * ПФ не задан, ожидание невозможно».</p>
      */
-    private int executionDeadlineMinutes = 60;
+    private int executionDeadlineMinutes = 1;
 }
