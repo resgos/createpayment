@@ -93,9 +93,12 @@ public class ExecuteResponseHandler {
         String transactionId = ctx.get().getCcTransactionId();
 
         boolean isFinal = isFinal(ccStatus);
+        boolean isExecuted = CcStatusMapper.EXECUTED.equals(ccStatus);
 
-        // 2. На финальном статусе — сохраняем turn_docdata (один раз, идемпотентно).
-        if (isFinal) {
+        // 2. Сохраняем turn_docdata ТОЛЬКО на PPRB_EXECUTED — это единственный случай,
+        //    когда PGW передаёт operationDto с реальными данными проводки.
+        //    На PPRB_FAILED operationDto обычно null (проводки не было) — turn_docdata не нужен.
+        if (isExecuted) {
             try {
                 saveTurnDocdataIfAbsent(updUID, transactionId, walletTurnObjectId, ticket);
             } catch (Exception e) {
