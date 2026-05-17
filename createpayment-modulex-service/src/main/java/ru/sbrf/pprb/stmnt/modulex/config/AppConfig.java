@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -30,6 +31,8 @@ import ru.sbrf.pprb.stmnt.modulex.lib.StatusWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataIdGenerator;
 import ru.sbrf.pprb.stmnt.modulex.lib.TurnDocdataRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.WalletTurnRepository;
+import ru.sbrf.pprb.stmnt.modulex.lib.outbox.InMemoryUpdOutboxRepository;
+import ru.sbrf.pprb.stmnt.modulex.lib.outbox.UpdOutboxRepository;
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.time.Duration;
@@ -38,6 +41,7 @@ import java.time.format.DateTimeFormatter;
 
 @Configuration
 @EnableAutoConfiguration
+@EnableScheduling
 @ComponentScan({"ru.sbrf.pprb.stmnt"})
 @EnableConfigurationProperties({
         SberIntegrationProperties.class,
@@ -134,6 +138,11 @@ public class AppConfig {
     @Bean
     public IdempotencyStore idempotencyStore() {
         return new InMemoryIdempotencyStore();
+    }
+
+    @Bean
+    public UpdOutboxRepository updOutboxRepository() {
+        return new InMemoryUpdOutboxRepository();
     }
 
     @Bean

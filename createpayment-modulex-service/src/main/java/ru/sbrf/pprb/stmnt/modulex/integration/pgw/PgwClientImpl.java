@@ -1,5 +1,10 @@
 package ru.sbrf.pprb.stmnt.modulex.integration.pgw;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
@@ -9,21 +14,61 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
 import ru.sbrf.pprb.stmnt.modulex.config.PgwProperties;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.UPDDTO;
+import ru.sbrf.pprb.stmnt.modulex.lib.outbox.UpdOutboxEntry;
+import ru.sbrf.pprb.stmnt.modulex.lib.outbox.UpdOutboxRepository;
 
+import java.time.LocalDateTime;
+
+/**
+ * HTTP-клиент PGW.
+ *
+ * <p>В {@link #transferUpd(String, UPDDTO)} делается ОДНА синхронная попытка
+ * отправки. При успехе — возвращаем ApiResult; при сбое (RestClientException
+ * или non-2xx) — кладём УРД в {@link UpdOutboxRepository} со статусом
+ * {@code PENDING} и бросаем исключение. Background-воркер
+ * ({@code PgwOutboxWorker}) дальше переотправляет с тем же {@code requestId}
+ * до {@code maxAttempts} раз. Это гарантирует доставку без блокировки
+ * клиентского Tomcat-треда.</p>
+ *
+ * <p>Метрики:</p>
+ * <ul>
+ *   <li>{@code pgw_transfer_upd_success}</li>
+ *   <li>{@code pgw_transfer_upd_failure}</li>
+ *   <li>{@code pgw_transfer_upd_duration} — timer</li>
+ *   <li>{@code pgw_transfer_upd_outbox} — попадание в outbox после первого провала</li>
+ * </ul>
+ */
 @Slf4j
 @Component
 public class PgwClientImpl implements PgwClient {
 
     private final PgwProperties properties;
     private final RestTemplate restTemplate;
+    private final UpdOutboxRepository outbox;
+    private final ObjectMapper objectMapper;
+
+    private final Counter success;
+    private final Counter failure;
+    private final Counter outboxed;
+    private final Timer duration;
 
     public PgwClientImpl(PgwProperties properties,
-                         @Qualifier("pgwRestTemplate") RestTemplate restTemplate) {
+                         @Qualifier("pgwRestTemplate") RestTemplate restTemplate,
+                         UpdOutboxRepository outbox,
+                         @Qualifier("sberObjectMapper") ObjectMapper objectMapper,
+                         MeterRegistry registry) {
         this.properties = properties;
         this.restTemplate = restTemplate;
+        this.outbox = outbox;
+        this.objectMapper = objectMapper;
+        this.success = Counter.builder("pgw_transfer_upd_success").register(registry);
+        this.failure = Counter.builder("pgw_transfer_upd_failure").register(registry);
+        this.outboxed = Counter.builder("pgw_transfer_upd_outbox").register(registry);
+        this.duration = Timer.builder("pgw_transfer_upd_duration").register(registry);
     }
 
     @Override
@@ -43,39 +88,66 @@ public class PgwClientImpl implements PgwClient {
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<UPDDTO> entity = new HttpEntity<>(updDTO, headers);
 
-        int attempts = Math.max(1, properties.getMaxAttempts());
-        long delay = Math.max(0, properties.getRetryDelayMs());
-        Exception lastError = null;
-
-        for (int i = 1; i <= attempts; i++) {
-            try {
-                log.debug("PGW transferUpd attempt {}/{} requestId={} updUID={}",
-                        i, attempts, requestId, updDTO.getUpdUID());
-                ResponseEntity<ApiResult> resp = restTemplate.postForEntity(url, entity, ApiResult.class);
-                ApiResult body = resp.getBody();
-                if (body == null) {
-                    body = ApiResult.builder().correlationId(requestId).build();
-                }
-                log.debug("PGW transferUpd ok: correlationId={}, idempotencyKey={}, status={}",
-                        body.getCorrelationId(), body.getIdempotencyKey(), body.getStatus());
-                return body;
-            } catch (RestClientException e) {
-                lastError = e;
-                log.warn("PGW transferUpd attempt {}/{} failed: {}", i, attempts, e.getMessage());
-                if (i < attempts) {
-                    try {
-                        Thread.sleep(delay);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
+        long started = System.nanoTime();
+        try {
+            log.debug("PGW transferUpd sync requestId={} updUID={}", requestId, updDTO.getUpdUID());
+            ResponseEntity<ApiResult> resp = restTemplate.postForEntity(url, entity, ApiResult.class);
+            ApiResult body = resp.getBody();
+            if (body == null) {
+                body = ApiResult.builder().correlationId(requestId).build();
             }
+            success.increment();
+            duration.record(System.nanoTime() - started, java.util.concurrent.TimeUnit.NANOSECONDS);
+            log.debug("PGW transferUpd ok: correlationId={}, idempotencyKey={}, status={}",
+                    body.getCorrelationId(), body.getIdempotencyKey(), body.getStatus());
+            return body;
+        } catch (RestClientException e) {
+            failure.increment();
+            duration.record(System.nanoTime() - started, java.util.concurrent.TimeUnit.NANOSECONDS);
+            log.warn("PGW transferUpd sync FAILED requestId={}: {} — scheduling outbox retry",
+                    requestId, e.getMessage());
+            scheduleOutboxRetry(requestId, updDTO, e.getMessage());
+            throw new IllegalStateException(
+                    "PGW transferUpd failed sync, queued for background retry: " + e.getMessage(), e);
         }
+    }
 
-        throw new IllegalStateException(
-                "PGW transferUpd failed after " + attempts + " attempt(s): "
-                        + (lastError != null ? lastError.getMessage() : "unknown error"),
-                lastError);
+    private void scheduleOutboxRetry(String requestId, UPDDTO updDTO, String errorMsg) {
+        try {
+            // Если запись уже есть (дубль/повторная отправка тем же клиентом) — не дублируем.
+            if (outbox.findByRequestId(requestId).isPresent()) {
+                log.debug("Outbox entry already exists for requestId={} — skip enqueue", requestId);
+                return;
+            }
+            String payload = objectMapper.writeValueAsString(updDTO);
+            LocalDateTime now = LocalDateTime.now(AppConfig.ZONE_ID);
+            UpdOutboxEntry entry = UpdOutboxEntry.builder()
+                    .ccRequestId(requestId)
+                    .ccUpdUID(updDTO.getUpdUID())
+                    .ccPayload(payload)
+                    .ccStatus(UpdOutboxEntry.STATUS_PENDING)
+                    .ccAttempts(1)  // первый sync-attempt уже был и провалился
+                    .ccMaxAttempts(Math.max(2, properties.getMaxAttempts()))
+                    .ccNextRetryAt(now.plusNanos(properties.getRetryDelayMs() * 1_000_000L))
+                    .ccLastError(truncate(errorMsg, 4000))
+                    .ccCreatedAt(now)
+                    .sysLastChangeDate(now)
+                    .build();
+            outbox.save(entry);
+            outboxed.increment();
+            log.info("Enqueued UPD in outbox: requestId={}, updUID={}, nextRetryAt={}",
+                    requestId, updDTO.getUpdUID(), entry.getCcNextRetryAt());
+        } catch (JsonProcessingException ex) {
+            log.error("Failed to serialize UPDDTO for outbox: requestId={}, error={}",
+                    requestId, ex.getMessage(), ex);
+        } catch (Exception ex) {
+            log.error("Failed to enqueue outbox entry for requestId={}: {}",
+                    requestId, ex.getMessage(), ex);
+        }
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) return null;
+        return s.length() <= max ? s : s.substring(0, max);
     }
 }
