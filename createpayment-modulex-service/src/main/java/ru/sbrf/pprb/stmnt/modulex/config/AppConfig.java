@@ -153,9 +153,10 @@ public class AppConfig {
                                                      PgwClient pgwClient,
                                                      WalletTurnRepository walletTurnRepository,
                                                      TurnDocdataRepository turnDocdataRepository,
-                                                     StatusWalletTurnRepository statusWalletTurnRepository) {
+                                                     StatusWalletTurnRepository statusWalletTurnRepository,
+                                                     PgwProperties pgwProperties) {
         return new CreatePaymentLibrary(simpleValidator, sberIntegrationClient, idGenerator,
                 pacs008Builder, pgwClient, walletTurnRepository,
-                turnDocdataRepository, statusWalletTurnRepository);
+                turnDocdataRepository, statusWalletTurnRepository, pgwProperties);
     }
 }

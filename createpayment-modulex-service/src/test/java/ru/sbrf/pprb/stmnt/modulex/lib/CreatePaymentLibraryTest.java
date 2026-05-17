@@ -66,7 +66,8 @@ class CreatePaymentLibraryTest {
         statusRepository = new InMemoryStatusWalletTurnRepository();
         library = new CreatePaymentLibrary(new SimpleValidator(), sberClient, idGenerator,
                 new Pacs008Builder(), pgwClient, walletTurnRepository,
-                turnDocdataRepository, statusRepository);
+                turnDocdataRepository, statusRepository,
+                new ru.sbrf.pprb.stmnt.modulex.config.PgwProperties());
 
         lenient().when(idGenerator.operationId()).thenReturn(GEN_OPERATION_ID);
         lenient().when(idGenerator.transactionId()).thenReturn(GEN_TX_ID);

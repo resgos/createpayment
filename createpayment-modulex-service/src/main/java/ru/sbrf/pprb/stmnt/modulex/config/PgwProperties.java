@@ -46,4 +46,15 @@ public class PgwProperties {
      * <p>Минимальный допустимый интервал от первой до последней — 1 минута.</p>
      */
     private long retryDelayMs = 180_000;
+
+    /**
+     * Срок ожидания исполнения УРД на стороне executor-PF, минут.
+     * Уходит в {@code msgAttributes.executionDeadline} как
+     * {@code now() + executionDeadlineMinutes} в формате
+     * {@code yyyy-MM-dd'T'HH:mm:ss.SSS}.
+     *
+     * <p>Без этого атрибута PGW отвечает ошибкой 102 «Срок ожидания исполнения
+     * ПФ не задан, ожидание невозможно».</p>
+     */
+    private int executionDeadlineMinutes = 60;
 }

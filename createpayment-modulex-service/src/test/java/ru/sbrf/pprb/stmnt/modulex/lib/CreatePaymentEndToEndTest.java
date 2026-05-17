@@ -90,7 +90,8 @@ class CreatePaymentEndToEndTest {
 
         // --- Реальная библиотека: pacs.008 строится, идентификаторы генерятся ---
         library = new CreatePaymentLibrary(new SimpleValidator(), sber, new TurnDocdataIdGenerator(),
-                new Pacs008Builder(), pgw, walletTurnRepo, turnDocdataRepo, statusRepo);
+                new Pacs008Builder(), pgw, walletTurnRepo, turnDocdataRepo, statusRepo,
+                new ru.sbrf.pprb.stmnt.modulex.config.PgwProperties());
         responseHandler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo,
                 new PgwOperationDtoParser(new com.fasterxml.jackson.databind.ObjectMapper()),
                 callback,

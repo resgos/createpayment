@@ -48,6 +48,7 @@ pgw:
   # 5 × 180000 ms = до 15 минут суммарного ретрая, ≥ минимума 1 мин.
   max-attempts: ${PGW_MAX_ATTEMPTS:5}
   retry-delay-ms: ${PGW_RETRY_DELAY_MS:180000}
+  execution-deadline-minutes: ${PGW_EXECUTION_DEADLINE_MINUTES:60}
   outbox:
     poll-interval-ms: ${PGW_OUTBOX_POLL_MS:60000}
     initial-delay-ms: ${PGW_OUTBOX_INITIAL_DELAY_MS:30000}

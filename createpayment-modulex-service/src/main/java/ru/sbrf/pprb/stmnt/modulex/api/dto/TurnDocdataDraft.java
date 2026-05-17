@@ -68,6 +68,11 @@ public class TurnDocdataDraft {
     private String ccKTNameBank;
     private String ccKTBankCorrAcc;
     private String ccKTRegisterId;
+    /**
+     * EPK / ucpId клиента-получателя — для msgAttributes.epkId.
+     * Берётся из FSKK_KT.ucpId при enrichKt.
+     */
+    private String ccKTUcpId;
 
     private String ccContrName;
     private String ccContrINN;

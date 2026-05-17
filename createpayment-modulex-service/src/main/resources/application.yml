@@ -51,6 +51,8 @@ pgw:
   # В прод-проф (application-prod.yml) — 5 × 180000 ms = до 15 мин общего ретрая.
   max-attempts: ${PGW_MAX_ATTEMPTS:3}
   retry-delay-ms: ${PGW_RETRY_DELAY_MS:5000}
+  # Срок ожидания исполнения УРД в минутах — уходит в msgAttributes.executionDeadline
+  execution-deadline-minutes: ${PGW_EXECUTION_DEADLINE_MINUTES:60}
   # Background outbox: гарант-доставка УРД после провала sync-attempt
   outbox:
     poll-interval-ms: ${PGW_OUTBOX_POLL_MS:60000}

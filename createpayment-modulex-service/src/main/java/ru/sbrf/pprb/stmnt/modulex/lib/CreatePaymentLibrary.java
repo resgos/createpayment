@@ -10,6 +10,7 @@ import ru.sbrf.pprb.stmnt.modulex.api.dto.TurnDocdataDraft.TurnDocdataDraftBuild
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurn;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.WalletTurnInput;
 import ru.sbrf.pprb.stmnt.modulex.config.AppConfig;
+import ru.sbrf.pprb.stmnt.modulex.config.PgwProperties;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ApiResult;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.UPDDTO;
@@ -20,6 +21,7 @@ import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,10 +33,27 @@ public class CreatePaymentLibrary {
 
     private static final String PACS_008_TYPE = "pacs.008.001.08";
     private static final String RCV_MODULE_ID = "in-house-execution-payment";
+
+    // ---- msgAttributes — обязательные/всегда передаваемые ----
     private static final String MSG_ATTR_PARENT_ID = "ParentID";
     private static final String MSG_ATTR_REGISTER_ID = "registerId";
     private static final String MSG_ATTR_EXECUTE_ON_DEBIT = "execute_on_debit";
     private static final String MSG_ATTR_COMPRESS = "compress";
+    // ---- msgAttributes — добавляемые по контракту PGW (опциональные) ----
+    /** Срок исполнения УРД. БЕЗ него PGW отвечает ошибкой 102. */
+    private static final String MSG_ATTR_EXECUTION_DEADLINE = "executionDeadline";
+    private static final String MSG_ATTR_TB = "TB";
+    private static final String MSG_ATTR_ACCOUNTING_EVENT_DATE = "accountingEventDate";
+    private static final String MSG_ATTR_ACCOUNT_DT = "accountDT";
+    private static final String MSG_ATTR_ACCOUNT_KT = "accountKT";
+    private static final String MSG_ATTR_EPK_ID = "epkId";
+
+    /** executionDeadline: {@code yyyy-MM-dd'T'HH:mm:ss.SSS}, 23 символа. */
+    private static final DateTimeFormatter EXECUTION_DEADLINE_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS");
+    /** accountingEventDate: {@code dd.MM.yy HH:mm:ss}. */
+    private static final DateTimeFormatter ACCOUNTING_EVENT_DATE_FMT =
+            DateTimeFormatter.ofPattern("dd.MM.yy HH:mm:ss");
 
     private final SimpleValidator simpleValidator;
     private final SberIntegrationClient sberClient;
@@ -44,6 +63,7 @@ public class CreatePaymentLibrary {
     private final WalletTurnRepository walletTurnRepository;
     private final TurnDocdataRepository turnDocdataRepository;
     private final StatusWalletTurnRepository statusWalletTurnRepository;
+    private final PgwProperties pgwProperties;
 
     public CreatePaymentLibrary(SimpleValidator simpleValidator,
                                 SberIntegrationClient sberClient,
@@ -52,7 +72,8 @@ public class CreatePaymentLibrary {
                                 PgwClient pgwClient,
                                 WalletTurnRepository walletTurnRepository,
                                 TurnDocdataRepository turnDocdataRepository,
-                                StatusWalletTurnRepository statusWalletTurnRepository) {
+                                StatusWalletTurnRepository statusWalletTurnRepository,
+                                PgwProperties pgwProperties) {
         this.simpleValidator = simpleValidator;
         this.sberClient = sberClient;
         this.idGenerator = idGenerator;
@@ -61,6 +82,7 @@ public class CreatePaymentLibrary {
         this.walletTurnRepository = walletTurnRepository;
         this.turnDocdataRepository = turnDocdataRepository;
         this.statusWalletTurnRepository = statusWalletTurnRepository;
+        this.pgwProperties = pgwProperties;
     }
 
     public CreatePaymentResponse execute(CreatePayment request) {
@@ -293,6 +315,7 @@ public class CreatePaymentLibrary {
         d.setCcKTAcc(fskk.getAccNum());
         d.setCcKTBIC(fskk.getAccBic());
         d.setCcKTBankCorrAcc(fskk.getAccBankCorrAcc());
+        d.setCcKTUcpId(fskk.getUcpId());
 
         if (fskk.getUcpId() != null && !fskk.getUcpId().isBlank()) {
             GetSberIntegrationResult byUcp = sberClient.getByUcpId(fskk.getUcpId(), rqUID);
@@ -387,12 +410,29 @@ public class CreatePaymentLibrary {
 
     private UPDDTO buildUpdDto(TurnDocdataDraft d, String pacs008Xml) {
         Map<String, String> attrs = new HashMap<>();
+
+        // 1. Обязательные / всегда передаваемые
         attrs.put(MSG_ATTR_PARENT_ID, d.getCcOperationId());
+        attrs.put(MSG_ATTR_EXECUTE_ON_DEBIT, "0");
+        attrs.put(MSG_ATTR_COMPRESS, "0");
         if (d.getCcRegisterId() != null) {
             attrs.put(MSG_ATTR_REGISTER_ID, d.getCcRegisterId());
         }
-        attrs.put(MSG_ATTR_EXECUTE_ON_DEBIT, "0");
-        attrs.put(MSG_ATTR_COMPRESS, "0");
+
+        // 2. executionDeadline — фикс ошибки PGW 102.
+        //    Срок берём из конфига (default 60 минут), формат yyyy-MM-dd'T'HH:mm:ss.SSS.
+        LocalDateTime deadline = LocalDateTime.now(AppConfig.ZONE_ID)
+                .plusMinutes(pgwProperties.getExecutionDeadlineMinutes());
+        attrs.put(MSG_ATTR_EXECUTION_DEADLINE, deadline.format(EXECUTION_DEADLINE_FMT));
+
+        // 3. Опциональные — кладём только если значение есть. Безопасно для legacy.
+        putIfPresent(attrs, MSG_ATTR_TB, d.getDtBranchCode());
+        if (d.getCcDate() != null) {
+            attrs.put(MSG_ATTR_ACCOUNTING_EVENT_DATE, d.getCcDate().format(ACCOUNTING_EVENT_DATE_FMT));
+        }
+        putIfPresent(attrs, MSG_ATTR_ACCOUNT_DT, d.getCcDTAcc());
+        putIfPresent(attrs, MSG_ATTR_ACCOUNT_KT, d.getCcKTAcc());
+        putIfPresent(attrs, MSG_ATTR_EPK_ID, d.getCcKTUcpId());
 
         return UPDDTO.builder()
                 .updUID(d.getCcOperationId())
@@ -403,5 +443,11 @@ public class CreatePaymentLibrary {
                 .msgAttributes(attrs)
                 .originalMessage(pacs008Xml)
                 .build();
+    }
+
+    private static void putIfPresent(Map<String, String> attrs, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            attrs.put(key, value);
+        }
     }
 }
