@@ -46,8 +46,11 @@ pgw:
   transfer-path: ${PGW_TRANSFER_PATH:/upd/transfer}
   connect-timeout-ms: ${PGW_CONNECT_TIMEOUT_MS:5000}
   read-timeout-ms: ${PGW_READ_TIMEOUT_MS:30000}
+  # Гарант-доставка по контракту PGW: 5–10 попыток, интервал 3–5 минут.
+  # В dev держим короткие значения, чтобы интерактивный тест не зависал.
+  # В прод-проф (application-prod.yml) — 5 × 180000 ms = до 15 мин общего ретрая.
   max-attempts: ${PGW_MAX_ATTEMPTS:3}
-  retry-delay-ms: ${PGW_RETRY_DELAY_MS:30000}
+  retry-delay-ms: ${PGW_RETRY_DELAY_MS:5000}
 
 # ----- sberIntegration ----------------------------------------------
 sber-integration:

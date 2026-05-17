@@ -17,18 +17,22 @@ import java.util.Optional;
 /**
  * Обработчик квитанции от PGW ({@code POST /upd/response/execute}).
  *
- * <p>Здесь происходит вся async-часть жизненного цикла walletTurn:</p>
+ * <p>Жизненный цикл вызова:</p>
  * <ol>
- *   <li>Резолвим {@code ccWalletTurnObjectId / ccTransactionId} по
- *       {@code ccOperationId=updUID} через status_WalletTurn (записанная
- *       в синке строка PPRB_STARTED знает эти соответствия).</li>
- *   <li>Маппим {@code resultStatus} + {@code statusInfo.code} в ccStatus
+ *   <li><b>Idempotency check</b> — если {@code idempotencyKey} уже видели,
+ *       возвращаем закешированный ApiResult без повторной обработки
+ *       (требование контракта PGW: дубль ResponseTicket → статус первого).</li>
+ *   <li><b>Resolve context</b> — ищем status_WalletTurn по {@code ccOperationId=updUID}
+ *       (PPRB_STARTED-строка содержит привязку к ccWalletTurnObjectId/ccTransactionId).
+ *       Если строки нет — синк ещё не завершился → возвращаем ERROR, PGW повторит.</li>
+ *   <li><b>Map status</b> — resultStatus + statusInfo.code → ccStatus
  *       (PPRB_PROCESSING / PPRB_EXECUTED / PPRB_FAILED).</li>
- *   <li>Если статус финальный (EXECUTED/FAILED) — парсим operationDto в
- *       {@link TurnDocdataDraft} и сохраняем {@code turn_docdata} (идемпотентно).</li>
- *   <li>Обновляем строку status_WalletTurn новым ccStatus + кодом + описанием.</li>
- *   <li>Только на финальном статусе — шлём ExecutionResult инициатору
- *       на его REST URL через {@link ResultCallbackClient}.</li>
+ *   <li><b>Persist on final</b> — для финальных EXECUTED/FAILED парсим operationDto,
+ *       сохраняем turn_docdata (idempotent: skip if exists).</li>
+ *   <li><b>Update status</b> — пишем новую строку в status_WalletTurn.</li>
+ *   <li><b>Outbound callback</b> — только на финальном статусе шлём
+ *       ExecutionResult инициатору через {@link ResultCallbackClient}.</li>
+ *   <li><b>Cache result</b> — кладём SUCCESS-результат в {@link IdempotencyCache}.</li>
  * </ol>
  */
 @Slf4j
@@ -39,18 +43,29 @@ public class ExecuteResponseHandler {
     private final TurnDocdataRepository turnDocdataRepository;
     private final PgwOperationDtoParser operationDtoParser;
     private final ResultCallbackClient resultCallback;
+    private final IdempotencyCache idempotencyCache;
 
     public ExecuteResponseHandler(StatusWalletTurnRepository statusRepository,
                                   TurnDocdataRepository turnDocdataRepository,
                                   PgwOperationDtoParser operationDtoParser,
-                                  ResultCallbackClient resultCallback) {
+                                  ResultCallbackClient resultCallback,
+                                  IdempotencyCache idempotencyCache) {
         this.statusRepository = statusRepository;
         this.turnDocdataRepository = turnDocdataRepository;
         this.operationDtoParser = operationDtoParser;
         this.resultCallback = resultCallback;
+        this.idempotencyCache = idempotencyCache;
     }
 
     public ApiResult handle(String correlationId, String idempotencyKey, ResponseTicketRequest ticket) {
+        // 0. Idempotency-проверка — самое первое, что делаем.
+        Optional<ApiResult> cached = idempotencyCache.get(idempotencyKey);
+        if (cached.isPresent()) {
+            log.info("Duplicate ResponseTicket by idempotencyKey={} — returning cached ApiResult, no re-processing",
+                    idempotencyKey);
+            return cached.get();
+        }
+
         if (ticket == null) {
             log.warn("Received null ResponseTicket for correlationId={}", correlationId);
             return errorResult(correlationId, idempotencyKey, "Empty body");
@@ -65,13 +80,17 @@ public class ExecuteResponseHandler {
         log.debug("PGW ticket: correlationId={}, idempotencyKey={}, updUID={}, resultStatus={}, code={}, ccStatus={}",
                 correlationId, idempotencyKey, updUID, ticket.getResultStatus(), code, ccStatus);
 
-        // 1. Резолвим ccWalletTurnObjectId / ccTransactionId через status_WalletTurn по ccOperationId.
+        // 1. Резолвим контекст по ccOperationId=updUID. Если синк ещё не дошёл до
+        //    PPRB_STARTED — возвращаем ERROR, PGW повторит позже (механизм гар-доставки).
         Optional<StatusWalletTurnView> ctx = statusRepository.findFirstByOperationId(updUID);
         if (ctx.isEmpty()) {
-            log.warn("No status_WalletTurn rows found for ccOperationId={} — нечем сшить квитанцию, fallback по updUID", updUID);
+            log.warn("ResponseTicket arrived before sync wrote PPRB_STARTED for updUID={} — returning ERROR, PGW will retry",
+                    updUID);
+            return errorResult(correlationId, idempotencyKey,
+                    "Context not yet persisted for updUID=" + updUID + " — retry expected");
         }
-        String walletTurnObjectId = ctx.map(StatusWalletTurnView::getCcWalletTurnObjectId).orElse(null);
-        String transactionId = ctx.map(StatusWalletTurnView::getCcTransactionId).orElse(null);
+        String walletTurnObjectId = ctx.get().getCcWalletTurnObjectId();
+        String transactionId = ctx.get().getCcTransactionId();
 
         boolean isFinal = isFinal(ccStatus);
 
@@ -117,12 +136,16 @@ public class ExecuteResponseHandler {
             }
         }
 
-        return ApiResult.builder()
+        ApiResult result = ApiResult.builder()
                 .correlationId(correlationId)
                 .idempotencyKey(idempotencyKey)
                 .status("SUCCESS")
                 .message("Ticket accepted, ccStatus=" + ccStatus)
                 .build();
+
+        // 5. Кэшируем успешный результат — для дедупа повторных PGW-вызовов.
+        idempotencyCache.put(idempotencyKey, result);
+        return result;
     }
 
     private void saveTurnDocdataIfAbsent(String updUID,

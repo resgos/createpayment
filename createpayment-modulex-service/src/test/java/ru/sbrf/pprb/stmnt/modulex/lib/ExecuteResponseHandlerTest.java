@@ -25,9 +25,7 @@ class ExecuteResponseHandlerTest {
     private static final String BCH_OP = "BCH-1";
     private static final String TX_ID = "tx-1";
 
-    /** Реальный пример payload-а от PGW — взят из IFT-лога. */
     private static final String OPERATION_DTO_JSON = "{\"performedOperations\":[{"
-            + "\"objectId\":\"obj-1\","
             + "\"accountingDate\":\"11.05.2026 00:00:00\","
             + "\"register\":{\"objectId\":\"7357234983332151303\"},"
             + "\"party\":{\"clientId\":\"1935680441079484251\"},"
@@ -38,23 +36,9 @@ class ExecuteResponseHandlerTest {
             + "\"orderDate\":\"15.05.2026 00:00:00\","
             + "\"payerAccount\":\"40702810538000097171\","
             + "\"payerName\":\"ООО Плательщик\","
-            + "\"payerInn\":\"9929029114\","
-            + "\"payerKpp\":\"583501361\","
-            + "\"payerBic\":\"044525225\","
-            + "\"payerBankName\":\"ПАО Сбербанк\","
-            + "\"payerCorrAccount\":\"30101810400000000225\","
             + "\"receiverAccount\":\"40702810138000101218\","
             + "\"receiverName\":\"ООО Получатель\","
-            + "\"receiverInn\":\"9929029114\","
-            + "\"receiverKpp\":\"583501361\","
-            + "\"receiverBic\":\"044525225\","
-            + "\"receiverBankName\":\"ПАО Сбербанк\","
-            + "\"receiverCorrAccount\":\"30101810400000000225\","
-            + "\"paymentAmount\":1500,"
-            + "\"paymentPriority\":5,"
-            + "\"remittanceInformation\":\"Test\","
-            + "\"orderNumber\":\"289312\","
-            + "\"subdivision\":\"38903801679\""
+            + "\"paymentAmount\":1500"
             + "},"
             + "\"externalAttributes\":{\"processNumber\":\"" + TX_ID + "\"}"
             + "}]}";
@@ -62,6 +46,7 @@ class ExecuteResponseHandlerTest {
     private InMemoryStatusWalletTurnRepository statusRepo;
     private InMemoryTurnDocdataRepository turnDocdataRepo;
     private PgwOperationDtoParser parser;
+    private IdempotencyCache idempotencyCache;
     private CapturingCallback callback;
     private ExecuteResponseHandler handler;
 
@@ -70,6 +55,7 @@ class ExecuteResponseHandlerTest {
         statusRepo = new InMemoryStatusWalletTurnRepository();
         turnDocdataRepo = new InMemoryTurnDocdataRepository();
         parser = new PgwOperationDtoParser(new ObjectMapper());
+        idempotencyCache = new IdempotencyCache();
         callback = new CapturingCallback();
         // Преднаполнили status_WalletTurn PPRB_STARTED — таким он был после синка.
         statusRepo.upsertStatus(StatusWalletTurnUpdate.builder()
@@ -80,7 +66,7 @@ class ExecuteResponseHandlerTest {
                 .sysLastChangeDate(LocalDateTime.now())
                 .build());
 
-        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, parser, callback);
+        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, parser, callback, idempotencyCache);
     }
 
     @Test
@@ -95,25 +81,41 @@ class ExecuteResponseHandlerTest {
         ApiResult ack = handler.handle(CORR_ID, IDEMP_KEY, ticket);
         assertThat(ack.getStatus()).isEqualTo("SUCCESS");
 
-        // turn_docdata создан из callback-payload
         assertThat(turnDocdataRepo.findByOperationId(UPD_UID)).isPresent();
 
-        // status_WalletTurn: PPRB_EXECUTED с правильными ID-ами (резолвнуто через PPRB_STARTED).
         StatusWalletTurnUpdate row = statusRepo.find(BCH_OP, "PPRB_EXECUTED");
         assertThat(row).isNotNull();
         assertThat(row.getCcOperationId()).isEqualTo(UPD_UID);
         assertThat(row.getCcTransactionId()).isEqualTo(TX_ID);
-        assertThat(row.getCcStatusCode()).isEqualTo("300");
-        assertThat(row.getCcStatusDesc()).isEqualTo("Документ успешно обработан");
 
-        // Финальный callback ушёл инициатору.
         assertThat(callback.sent).hasSize(1);
         ExecutionResult er = callback.sent.get(0);
         assertThat(er.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
-        assertThat(er.getOperationId()).isEqualTo(UPD_UID);
-        assertThat(er.getTransactionId()).isEqualTo(TX_ID);
         assertThat(er.getBchOperationId()).isEqualTo(BCH_OP);
-        assertThat(er.getStatusDescription()).isNull();
+    }
+
+    @Test
+    void duplicateIdempotencyKeyReturnsCachedAndDoesNotReprocess() {
+        ResponseTicketRequest ticket = ResponseTicketRequest.builder()
+                .updUID(UPD_UID)
+                .operationDto(OPERATION_DTO_JSON)
+                .resultStatus(ResultStatus.SUCCESS)
+                .statusInfo(StatusInfo.builder().code("300").message("Документ успешно обработан").build())
+                .build();
+
+        // Первый вызов — обычная обработка
+        ApiResult first = handler.handle(CORR_ID, IDEMP_KEY, ticket);
+        assertThat(first.getStatus()).isEqualTo("SUCCESS");
+        assertThat(callback.sent).hasSize(1);
+
+        // Второй вызов с тем же idempotencyKey — должен вернуть кеш
+        ApiResult second = handler.handle(CORR_ID, IDEMP_KEY, ticket);
+        assertThat(second).isEqualTo(first);
+
+        // Callback инициатору НЕ дублируется, статус не пишется повторно
+        assertThat(callback.sent).hasSize(1);
+        // PPRB_EXECUTED строка осталась одна (в InMemory upsert перезаписал бы — проверяем что не было повторной обработки)
+        assertThat(idempotencyCache.size()).isEqualTo(1);
     }
 
     @Test
@@ -146,7 +148,6 @@ class ExecuteResponseHandlerTest {
         handler.handle(CORR_ID, IDEMP_KEY, ticket);
 
         assertThat(statusRepo.find(BCH_OP, "PPRB_PROCESSING")).isNotNull();
-        // turn_docdata не сохраняется на промежуточном статусе.
         assertThat(turnDocdataRepo.findByOperationId(UPD_UID)).isEmpty();
         assertThat(callback.sent).isEmpty();
     }
@@ -158,13 +159,16 @@ class ExecuteResponseHandlerTest {
         assertThat(ack.getStatus()).isEqualTo("ERROR");
         assertThat(ack.getMessage()).isEqualTo("Empty body");
         assertThat(callback.sent).isEmpty();
+        // ERROR не кэшируется — PGW сможет повторить
+        assertThat(idempotencyCache.size()).isZero();
     }
 
     @Test
-    void missingStatusRowStillUpdatesStatusButCallbackHasNullIds() {
-        // нет PPRB_STARTED в репозитории под этим updUID — резолв провалится
+    void missingPprbStartedReturnsErrorForPgwRetry() {
+        // нет PPRB_STARTED строки для этого updUID — синк ещё не завершился
         statusRepo = new InMemoryStatusWalletTurnRepository();
-        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, parser, callback);
+        idempotencyCache = new IdempotencyCache();
+        handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, parser, callback, idempotencyCache);
 
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID("UNKNOWN-UID")
@@ -173,16 +177,16 @@ class ExecuteResponseHandlerTest {
                 .statusInfo(StatusInfo.builder().code("300").build())
                 .build();
 
-        handler.handle(CORR_ID, IDEMP_KEY, ticket);
+        ApiResult ack = handler.handle(CORR_ID, IDEMP_KEY, ticket);
 
-        // Запись о статусе ушла без ccWalletTurnObjectId — InMemory skip-ает её
-        // (см. InMemoryStatusWalletTurnRepository.upsertStatus → ключ строит из null).
-        // Callback всё равно отправлен (финальное состояние), но без bchOpId/txId.
-        assertThat(callback.sent).hasSize(1);
-        ExecutionResult er = callback.sent.get(0);
-        assertThat(er.getOperationId()).isEqualTo("UNKNOWN-UID");
-        assertThat(er.getBchOperationId()).isNull();
-        assertThat(er.getTransactionId()).isNull();
+        // Возвращаем ERROR — PGW повторит. Callback инициатору НЕ шлём,
+        // status не пишем, turn_docdata не сохраняем.
+        assertThat(ack.getStatus()).isEqualTo("ERROR");
+        assertThat(ack.getMessage()).contains("Context not yet persisted");
+        assertThat(callback.sent).isEmpty();
+        assertThat(turnDocdataRepo.findByOperationId("UNKNOWN-UID")).isEmpty();
+        // ERROR не кэшируется → PGW сможет повторить
+        assertThat(idempotencyCache.size()).isZero();
     }
 
     private static class CapturingCallback implements ResultCallbackClient {

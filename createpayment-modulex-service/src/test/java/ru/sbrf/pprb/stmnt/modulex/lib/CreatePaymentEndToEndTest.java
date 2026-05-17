@@ -92,7 +92,8 @@ class CreatePaymentEndToEndTest {
         library = new CreatePaymentLibrary(new SimpleValidator(), sber, new TurnDocdataIdGenerator(),
                 new Pacs008Builder(), pgw, walletTurnRepo, turnDocdataRepo, statusRepo);
         responseHandler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo,
-                new PgwOperationDtoParser(new com.fasterxml.jackson.databind.ObjectMapper()), callback);
+                new PgwOperationDtoParser(new com.fasterxml.jackson.databind.ObjectMapper()),
+                callback, new IdempotencyCache());
     }
 
     /** Минимальный operationDto для имитации PGW callback. */

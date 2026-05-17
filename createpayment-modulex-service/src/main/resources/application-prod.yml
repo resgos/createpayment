@@ -44,8 +44,10 @@ pgw:
   transfer-path: /upd/transfer
   connect-timeout-ms: ${PGW_CONNECT_TIMEOUT_MS:5000}
   read-timeout-ms: ${PGW_READ_TIMEOUT_MS:60000}
+  # Гарант-доставка по контракту PGW: 5–10 попыток, интервал 3–5 минут.
+  # 5 × 180000 ms = до 15 минут суммарного ретрая, ≥ минимума 1 мин.
   max-attempts: ${PGW_MAX_ATTEMPTS:5}
-  retry-delay-ms: ${PGW_RETRY_DELAY_MS:30000}
+  retry-delay-ms: ${PGW_RETRY_DELAY_MS:180000}
 
 sber-integration:
   url: ${SBER_INTEGRATION_URL}
