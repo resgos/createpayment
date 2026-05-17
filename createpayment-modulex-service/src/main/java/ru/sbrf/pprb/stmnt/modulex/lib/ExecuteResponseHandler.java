@@ -95,15 +95,15 @@ public class ExecuteResponseHandler {
         boolean isFinal = isFinal(ccStatus);
         boolean isExecuted = CcStatusMapper.EXECUTED.equals(ccStatus);
 
-        // 2. Сохраняем turn_docdata ТОЛЬКО на PPRB_EXECUTED — это единственный случай,
-        //    когда PGW передаёт operationDto с реальными данными проводки.
-        //    На PPRB_FAILED operationDto обычно null (проводки не было) — turn_docdata не нужен.
+        // 2. turn_docdata пишется в синке (двойная запись DT+KT) — здесь только
+        //    fallback на случай, если sync не успел. Использует данные из
+        //    operationDto PGW (без ccKTRegisterId — он только в синке).
         if (isExecuted) {
             try {
                 saveTurnDocdataIfAbsent(updUID, transactionId, walletTurnObjectId, ticket);
             } catch (Exception e) {
-                log.error("turn_docdata save failed for updUID={}: {}", updUID, e.getMessage(), e);
-                // продолжаем — статус всё равно фиксируем, чтобы был след
+                log.error("turn_docdata fallback save failed for updUID={}: {}", updUID, e.getMessage(), e);
+                // продолжаем — статус всё равно фиксируем
             }
         }
 

@@ -97,8 +97,9 @@ class CreatePaymentLibraryTest {
         assertThat(result.getBchOperationId()).isEqualTo(BCH_OP_1);
         assertThat(result.getContractId()).isEqualTo(CONTRACT_1);
 
-        // turn_docdata в синке НЕ сохраняется — будет создан после callback от PGW.
-        assertThat(turnDocdataRepository.findByOperationId(GEN_OPERATION_ID)).isEmpty();
+        // turn_docdata в синке сохраняется ДВЕ строки (DT+KT) — двойная запись.
+        // findByOperationId(ccOperationId) находит хотя бы одну (in-memory returns first).
+        assertThat(turnDocdataRepository.findByOperationId(GEN_OPERATION_ID)).isPresent();
 
         // status_WalletTurn содержит PPRB_GET (после валидации) и PPRB_STARTED (после PGW).
         StatusWalletTurnUpdate getRow = statusRepository.find(BCH_OP_1, "PPRB_GET");

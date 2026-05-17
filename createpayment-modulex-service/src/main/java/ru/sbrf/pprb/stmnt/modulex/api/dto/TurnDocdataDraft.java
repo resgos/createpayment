@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
  * Поля, которые на момент DRAFT не заполняются, оставлены null (см. сводку маппинга).
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class TurnDocdataDraft {

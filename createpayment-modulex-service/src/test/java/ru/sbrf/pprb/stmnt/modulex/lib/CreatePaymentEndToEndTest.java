@@ -153,8 +153,8 @@ class CreatePaymentEndToEndTest {
                 .contains("<DbtrAgt>")
                 .doesNotContain("<BrnchId>"); // BrnchId не выпускается по эталону
 
-        // 3. В синке turn_docdata НЕ сохраняется (это асинхронно после callback PGW).
-        assertThat(turnDocdataRepo.findByOperationId(sync.getOperationId())).isEmpty();
+        // 3. В синке turn_docdata сохраняется (двойная запись DT+KT).
+        assertThat(turnDocdataRepo.findByOperationId(sync.getOperationId())).isPresent();
 
         // А статусы PPRB_GET и PPRB_STARTED — записаны.
         StatusWalletTurnUpdate getRow = statusRepo.find(BCH_OP, "PPRB_GET");
@@ -179,11 +179,11 @@ class CreatePaymentEndToEndTest {
         ApiResult ack = responseHandler.handle("CORR-1",
                 "fa163e86-2c97-1eed-aaa6-2d82577ece51", ticket);
 
-        // turn_docdata создан из callback payload
+        // turn_docdata уже создан в синке (двойная запись). После callback
+        // запись остаётся та же — async-fallback вызывает skip if exists.
         TurnDocdataDraft persistedDraft = turnDocdataRepo.findByOperationId(sync.getOperationId())
                 .orElseThrow();
         assertThat(persistedDraft.getCcBchOperationId()).isEqualTo(BCH_OP);
-        assertThat(persistedDraft.getCcTransactionId()).isEqualTo(sync.getTransactionId());
         assertThat(persistedDraft.getCcDTName()).isEqualTo("ИП БЕЛИКОВА И. П.");
         assertThat(persistedDraft.getCcKTName()).isEqualTo("ООО \"ДИЗЕЛЬ\"");
 

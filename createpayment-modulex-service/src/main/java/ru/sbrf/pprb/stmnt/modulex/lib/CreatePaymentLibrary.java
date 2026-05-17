@@ -155,7 +155,12 @@ public class CreatePaymentLibrary {
             draft.setPacs008Xml(xml);
             sendToPgw(draft, xml);
 
-            // 2. PPRB_STARTED — PGW принял pacs.008. Ждём async-квитанцию.
+            // 2. turn_docdata — двойная запись (DT + KT). Пишем в синке, пока
+            //    у нас полные данные обогащения (включая ccKTRegisterId).
+            //    Async-callback от PGW дополнит ccPayStatus финальным значением.
+            saveTurnDocdataPair(draft, wt, txId);
+
+            // 3. PPRB_STARTED — PGW принял pacs.008. Ждём async-квитанцию.
             persistStatus(bchOpId, operationId, txId,
                     ExecutionStatus.PPRB_STARTED.name(), null, null);
 
@@ -185,6 +190,50 @@ public class CreatePaymentLibrary {
                     .resultStatus(ExecutionStatus.PPRB_FAILED)
                     .statusDescription(e.getMessage())
                     .build();
+        }
+    }
+
+    /**
+     * Двойная запись в turn_docdata по принципу банковской дебет/кредит:
+     * <ul>
+     *   <li><b>DT-строка</b>: {@code ccDT="1"}, {@code ccRegisterId=DT_register},
+     *       {@code ccWalletId=DT_walletId}, {@code ccTransactionId=originalTxId}.</li>
+     *   <li><b>KT-строка</b>: {@code ccDT="0"}, {@code ccRegisterId=KT_register},
+     *       {@code ccWalletId=KT_walletId}, {@code ccTransactionId=originalTxId + "-KT"}.</li>
+     * </ul>
+     *
+     * <p>Обе строки делят {@code ccOperationId} (DOCGUID), {@code ccBchOperationId},
+     * полный набор Dbtr/Cdtr-реквизитов. Отличаются только перспективой
+     * (чей счёт первичный) и txId — чтобы уникальный индекс по
+     * {@code ccTransactionId} не нарушался.</p>
+     *
+     * <p>Если одна из сторон не удалась — продолжаем (вторая может пройти),
+     * статус всё равно в status_WalletTurn.</p>
+     */
+    private void saveTurnDocdataPair(TurnDocdataDraft baseDraft, WalletTurn wt, String txId) {
+        // DT-строка — base draft уже настроен под DT (ccDT=DT_DEBIT, ccRegisterId=ccDTRegisterId)
+        try {
+            turnDocdataRepository.save(baseDraft);
+            log.debug("turn_docdata DT row saved: ccTransactionId={}, ccRegisterId={}",
+                    baseDraft.getCcTransactionId(), baseDraft.getCcRegisterId());
+        } catch (Exception e) {
+            log.error("turn_docdata DT row save failed: ccBchOperationId={}, error={}",
+                    baseDraft.getCcBchOperationId(), e.getMessage(), e);
+        }
+        // KT-строка — клонируем base, флипаем перспективу
+        try {
+            TurnDocdataDraft ktDraft = baseDraft.toBuilder()
+                    .ccTransactionId(txId + "-KT")
+                    .ccRegisterId(wt.getCcRegisterKt())
+                    .ccWalletId(wt.getCcOwnerKt())
+                    .ccDT("0")  // credit-side
+                    .build();
+            turnDocdataRepository.save(ktDraft);
+            log.debug("turn_docdata KT row saved: ccTransactionId={}, ccRegisterId={}",
+                    ktDraft.getCcTransactionId(), ktDraft.getCcRegisterId());
+        } catch (Exception e) {
+            log.error("turn_docdata KT row save failed: ccBchOperationId={}, error={}",
+                    baseDraft.getCcBchOperationId(), e.getMessage(), e);
         }
     }
 
