@@ -17,4 +17,7 @@ public interface UpdOutboxRepository {
 
     /** Достать PENDING-записи, готовые к попытке (ccNextRetryAt &le; now), лимит. */
     List<UpdOutboxEntry> findPending(LocalDateTime now, int limit);
+
+    /** Кол-во записей в указанном статусе — для метрик. */
+    long countByStatus(String status);
 }

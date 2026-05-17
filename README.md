@@ -383,6 +383,24 @@ GET /actuator/prometheus
 GET /actuator/metrics
 ```
 
+#### Доменные метрики
+
+| Метрика | Тип | Тэги | Описание |
+|---|---|---|---|
+| `idempotency_cache_hits` | counter | `level=l1\|l2` | Попадание в кэш идемпотентности |
+| `idempotency_cache_misses` | counter | `level=l1` | Промах в L1 (потом идём в L2) |
+| `idempotency_cache_saves` | counter | — | Сохранения SUCCESS-результатов |
+| `idempotency_cache_skipped_non_success` | counter | — | Не сохранили ERROR-ApiResult |
+| `idempotency_cache_l1_size` | gauge | — | Текущий размер L1 |
+| `pgw_transfer_upd_success` | counter | — | Успешные sync-attempt в PGW |
+| `pgw_transfer_upd_failure` | counter | — | Провальные sync-attempt |
+| `pgw_transfer_upd_outbox` | counter | — | Попадание УРД в outbox после провала |
+| `pgw_transfer_upd_duration` | timer | — | Длительность sync-attempt |
+| `outbox_size` | gauge | `status=PENDING\|SENT\|GIVEUP` | Размер очереди гарант-доставки |
+| `outbox_processed` | counter | — | Успешно отправлено воркером |
+| `outbox_retry` | counter | — | Попыток воркера (любых) |
+| `outbox_giveup` | counter | — | Переходов в GIVEUP |
+
 ---
 
 ## Тесты

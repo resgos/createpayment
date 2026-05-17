@@ -94,6 +94,22 @@ public class DataSpaceUpdOutboxRepository implements UpdOutboxRepository {
     }
 
     @Override
+    public long countByStatus(String status) {
+        if (status == null || status.isBlank()) return 0;
+        try {
+            GraphCollection<UpdOutboxGet> coll = dsApi.searchUpdOutbox(g -> g
+                    .setWhere(w -> w.ccStatusEq(status))
+                    .setLimit(1)
+                    .setTotalCount(true)
+                    .withCcStatus());
+            return coll.getTotalCount();
+        } catch (SdkJsonRpcClientException e) {
+            log.warn("upd_outbox countByStatus failed for status={}: {}", status, e.getMessage());
+            return 0;
+        }
+    }
+
+    @Override
     public List<UpdOutboxEntry> findPending(LocalDateTime now, int limit) {
         try {
             GraphCollection<UpdOutboxGet> coll = dsApi.searchUpdOutbox(g -> g

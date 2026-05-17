@@ -31,6 +31,12 @@ public class InMemoryUpdOutboxRepository implements UpdOutboxRepository {
     }
 
     @Override
+    public long countByStatus(String status) {
+        if (status == null) return 0;
+        return store.values().stream().filter(e -> status.equals(e.getCcStatus())).count();
+    }
+
+    @Override
     public List<UpdOutboxEntry> findPending(LocalDateTime now, int limit) {
         return store.values().stream()
                 .filter(e -> UpdOutboxEntry.STATUS_PENDING.equals(e.getCcStatus()))
