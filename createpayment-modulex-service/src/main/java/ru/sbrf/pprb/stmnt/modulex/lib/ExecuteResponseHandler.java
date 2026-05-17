@@ -59,7 +59,7 @@ public class ExecuteResponseHandler {
 
     public ApiResult handle(String correlationId, String idempotencyKey, ResponseTicketRequest ticket) {
         // 0. Idempotency-проверка — самое первое, что делаем.
-        Optional<ApiResult> cached = idempotencyCache.get(idempotencyKey);
+        Optional<ApiResult> cached = idempotencyCache.find(idempotencyKey);
         if (cached.isPresent()) {
             log.info("Duplicate ResponseTicket by idempotencyKey={} — returning cached ApiResult, no re-processing",
                     idempotencyKey);
@@ -144,7 +144,8 @@ public class ExecuteResponseHandler {
                 .build();
 
         // 5. Кэшируем успешный результат — для дедупа повторных PGW-вызовов.
-        idempotencyCache.put(idempotencyKey, result);
+        //    L1 (in-memory, мгновенно) + L2 (DataSpace, переживает рестарт пода).
+        idempotencyCache.save(idempotencyKey, correlationId, updUID, result);
         return result;
     }
 

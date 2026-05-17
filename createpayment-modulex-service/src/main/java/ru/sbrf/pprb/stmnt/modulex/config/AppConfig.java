@@ -20,6 +20,8 @@ import ru.sbrf.pprb.stmnt.modulex.logging.HttpLoggingInterceptor;
 import ru.sbrf.pprb.stmnt.modulex.integration.pgw.PgwClient;
 import ru.sbrf.pprb.stmnt.modulex.integration.sber.SberIntegrationClient;
 import ru.sbrf.pprb.stmnt.modulex.lib.CreatePaymentLibrary;
+import ru.sbrf.pprb.stmnt.modulex.lib.IdempotencyStore;
+import ru.sbrf.pprb.stmnt.modulex.lib.InMemoryIdempotencyStore;
 import ru.sbrf.pprb.stmnt.modulex.lib.InMemoryStatusWalletTurnRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.InMemoryTurnDocdataRepository;
 import ru.sbrf.pprb.stmnt.modulex.lib.InMemoryWalletTurnRepository;
@@ -127,6 +129,11 @@ public class AppConfig {
     @Bean
     public StatusWalletTurnRepository statusWalletTurnRepository() {
         return new InMemoryStatusWalletTurnRepository();
+    }
+
+    @Bean
+    public IdempotencyStore idempotencyStore() {
+        return new InMemoryIdempotencyStore();
     }
 
     @Bean

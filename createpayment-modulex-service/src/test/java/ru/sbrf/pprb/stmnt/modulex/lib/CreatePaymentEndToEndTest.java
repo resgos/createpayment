@@ -93,7 +93,9 @@ class CreatePaymentEndToEndTest {
                 new Pacs008Builder(), pgw, walletTurnRepo, turnDocdataRepo, statusRepo);
         responseHandler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo,
                 new PgwOperationDtoParser(new com.fasterxml.jackson.databind.ObjectMapper()),
-                callback, new IdempotencyCache());
+                callback,
+                new IdempotencyCache(new InMemoryIdempotencyStore(),
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
     }
 
     /** Минимальный operationDto для имитации PGW callback. */

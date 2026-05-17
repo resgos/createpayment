@@ -1,6 +1,7 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionResult;
@@ -55,7 +56,7 @@ class ExecuteResponseHandlerTest {
         statusRepo = new InMemoryStatusWalletTurnRepository();
         turnDocdataRepo = new InMemoryTurnDocdataRepository();
         parser = new PgwOperationDtoParser(new ObjectMapper());
-        idempotencyCache = new IdempotencyCache();
+        idempotencyCache = new IdempotencyCache(new InMemoryIdempotencyStore(), new SimpleMeterRegistry());
         callback = new CapturingCallback();
         // Преднаполнили status_WalletTurn PPRB_STARTED — таким он был после синка.
         statusRepo.upsertStatus(StatusWalletTurnUpdate.builder()
@@ -167,7 +168,7 @@ class ExecuteResponseHandlerTest {
     void missingPprbStartedReturnsErrorForPgwRetry() {
         // нет PPRB_STARTED строки для этого updUID — синк ещё не завершился
         statusRepo = new InMemoryStatusWalletTurnRepository();
-        idempotencyCache = new IdempotencyCache();
+        idempotencyCache = new IdempotencyCache(new InMemoryIdempotencyStore(), new SimpleMeterRegistry());
         handler = new ExecuteResponseHandler(statusRepo, turnDocdataRepo, parser, callback, idempotencyCache);
 
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()

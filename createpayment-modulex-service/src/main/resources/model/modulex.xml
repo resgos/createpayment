@@ -255,6 +255,50 @@
         </index>
     </class>
 
+    <class name="ResponseTicketIdempotency" label="responseTicket_idempotency. Защита от дублей PGW callback">
+        <property name="ccIdempotencyKey" type="String" length="64" mandatory="true" label="idempotencyKey REST-вызова от PGW"/>
+        <property name="ccCorrelationId" type="String" length="64" label="correlationId = requestId исходного УРД"/>
+        <property name="ccUpdUID" type="String" length="64" label="updUID — ID УРД, по которому пришла квитанция"/>
+        <property name="ccApiResultStatus" type="String" length="32" label="Статус ApiResult: SUCCESS/ERROR"/>
+        <property name="ccApiResultMessage" type="String" length="4000" label="Сообщение ApiResult"/>
+        <property name="ccProcessedAt" type="LocalDateTime" mandatory="true" label="Время первичной обработки"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccIdempotencyKey"/>
+        </index>
+        <index unique="false">
+            <property name="ccUpdUID"/>
+        </index>
+        <index unique="false">
+            <property name="ccProcessedAt"/>
+        </index>
+    </class>
+
+    <class name="UpdOutbox" label="upd_outbox. Гарант-доставка УРД в PGW (background retry)">
+        <property name="ccRequestId" type="String" length="64" mandatory="true" label="requestId УРД — стабилен между попытками"/>
+        <property name="ccUpdUID" type="String" length="64" mandatory="true" label="updUID — ID УРД"/>
+        <property name="ccPayload" type="String" length="32000" mandatory="true" label="Сериализованный UPDDTO (JSON)"/>
+        <property name="ccStatus" type="String" length="32" mandatory="true" label="PENDING / SENT / GIVEUP"/>
+        <property name="ccAttempts" type="Integer" mandatory="true" label="Сколько попыток уже сделано"/>
+        <property name="ccMaxAttempts" type="Integer" mandatory="true" label="Лимит попыток для этого УРД"/>
+        <property name="ccNextRetryAt" type="LocalDateTime" label="Когда следующая попытка"/>
+        <property name="ccLastError" type="String" length="4000" label="Текст последней ошибки"/>
+        <property name="ccCreatedAt" type="LocalDateTime" mandatory="true" label="Когда поставлен в outbox"/>
+        <property name="sysLastChangeDate" type="LocalDateTime" label="Последняя дата изменения"/>
+
+        <index unique="true">
+            <property name="ccRequestId"/>
+        </index>
+        <index unique="false">
+            <property name="ccStatus"/>
+            <property name="ccNextRetryAt"/>
+        </index>
+        <index unique="false">
+            <property name="ccUpdUID"/>
+        </index>
+    </class>
+
     <class name="BlockOffset" label="block_offset. Техническая таблица последовательной обработки блоков">
         <property name="ccCurrentBlock" type="Integer" mandatory="true" label="Номер текущего блока в обработке"/>
         <property name="ccStatus" type="String" length="30" mandatory="true" label="Статус записи"/>
