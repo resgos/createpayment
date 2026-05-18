@@ -21,7 +21,6 @@ import ru.sbrf.pprb.stmnt.modulex.integration.sber.dto.GetSberIntegrationResult.
 import ru.sbrf.pprb.stmnt.modulex.validator.SimpleValidator;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,26 +33,11 @@ public class CreatePaymentLibrary {
     private static final String PACS_008_TYPE = "pacs.008.001.08";
     private static final String RCV_MODULE_ID = "in-house-execution-payment";
 
-    // ---- msgAttributes — обязательные/всегда передаваемые ----
+    // msgAttributes — только обязательные.
     private static final String MSG_ATTR_PARENT_ID = "ParentID";
     private static final String MSG_ATTR_REGISTER_ID = "registerId";
     private static final String MSG_ATTR_EXECUTE_ON_DEBIT = "execute_on_debit";
     private static final String MSG_ATTR_COMPRESS = "compress";
-    // ---- msgAttributes — добавляемые по контракту PGW (опциональные) ----
-    /** Срок исполнения УРД. БЕЗ него PGW отвечает ошибкой 102. */
-    private static final String MSG_ATTR_EXECUTION_DEADLINE = "executionDeadline";
-    private static final String MSG_ATTR_TB = "TB";
-    private static final String MSG_ATTR_ACCOUNTING_EVENT_DATE = "accountingEventDate";
-    private static final String MSG_ATTR_ACCOUNT_DT = "accountDT";
-    private static final String MSG_ATTR_ACCOUNT_KT = "accountKT";
-    private static final String MSG_ATTR_EPK_ID = "epkId";
-
-    /** executionDeadline: {@code yyyy-MM-dd'T'HH:mm:ss.SSS}, 23 символа. */
-    private static final DateTimeFormatter EXECUTION_DEADLINE_FMT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS");
-    /** accountingEventDate: {@code dd.MM.yy HH:mm:ss}. */
-    private static final DateTimeFormatter ACCOUNTING_EVENT_DATE_FMT =
-            DateTimeFormatter.ofPattern("dd.MM.yy HH:mm:ss");
 
     private final SimpleValidator simpleValidator;
     private final SberIntegrationClient sberClient;
@@ -469,28 +453,15 @@ public class CreatePaymentLibrary {
     private UPDDTO buildUpdDto(TurnDocdataDraft d, String pacs008Xml) {
         Map<String, String> attrs = new HashMap<>();
 
-        // 1. Обязательные / всегда передаваемые
+        // Только обязательные msgAttributes. Остальные параметры
+        // (sourceIdModuleList, channel, sendServiceId, executionDeadline и т.д.)
+        // уходят либо через SplmtryData в pacs.008, либо через root UPDDTO.
         attrs.put(MSG_ATTR_PARENT_ID, d.getCcOperationId());
         attrs.put(MSG_ATTR_EXECUTE_ON_DEBIT, "0");
         attrs.put(MSG_ATTR_COMPRESS, "0");
         if (d.getCcRegisterId() != null) {
             attrs.put(MSG_ATTR_REGISTER_ID, d.getCcRegisterId());
         }
-
-        // 2. executionDeadline — фикс ошибки PGW 102.
-        //    Срок берём из конфига (default 60 минут), формат yyyy-MM-dd'T'HH:mm:ss.SSS.
-        LocalDateTime deadline = LocalDateTime.now(AppConfig.ZONE_ID)
-                .plusMinutes(pgwProperties.getExecutionDeadlineMinutes());
-        attrs.put(MSG_ATTR_EXECUTION_DEADLINE, deadline.format(EXECUTION_DEADLINE_FMT));
-
-        // 3. Опциональные — кладём только если значение есть. Безопасно для legacy.
-        putIfPresent(attrs, MSG_ATTR_TB, d.getDtBranchCode());
-        if (d.getCcDate() != null) {
-            attrs.put(MSG_ATTR_ACCOUNTING_EVENT_DATE, d.getCcDate().format(ACCOUNTING_EVENT_DATE_FMT));
-        }
-        putIfPresent(attrs, MSG_ATTR_ACCOUNT_DT, d.getCcDTAcc());
-        putIfPresent(attrs, MSG_ATTR_ACCOUNT_KT, d.getCcKTAcc());
-        putIfPresent(attrs, MSG_ATTR_EPK_ID, d.getCcKTUcpId());
 
         return UPDDTO.builder()
                 .updUID(d.getCcOperationId())
@@ -501,11 +472,5 @@ public class CreatePaymentLibrary {
                 .msgAttributes(attrs)
                 .originalMessage(pacs008Xml)
                 .build();
-    }
-
-    private static void putIfPresent(Map<String, String> attrs, String key, String value) {
-        if (value != null && !value.isBlank()) {
-            attrs.put(key, value);
-        }
     }
 }
