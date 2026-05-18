@@ -98,6 +98,19 @@ class Pacs008BuilderTest {
     }
 
     @Test
+    void ustrdLongerThan140IsTruncated() {
+        TurnDocdataDraft d = sampleDraft();
+        String longPurpose = "П".repeat(200);
+        d.setCcPurpose(longPurpose);
+
+        String xml = builder.build(d);
+
+        // Ustrd обрезан до 140 символов (Max140Text по pacs.008).
+        assertThat(xml).contains("<Ustrd>" + "П".repeat(140) + "</Ustrd>");
+        assertThat(xml).doesNotContain("П".repeat(141));
+    }
+
+    @Test
     void nameLongerThan140CharsIsTruncatedAndTailMovedToCtctDtls() {
         TurnDocdataDraft d = sampleDraft();
         String longName = "X".repeat(160);

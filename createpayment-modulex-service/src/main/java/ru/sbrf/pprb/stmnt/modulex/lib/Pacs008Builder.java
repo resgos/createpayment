@@ -168,7 +168,8 @@ public class Pacs008Builder {
 
         Element rmtInf = elem(doc, parent, "RmtInf");
         if (hasPurpose) {
-            text(doc, rmtInf, "Ustrd", d.getCcPurpose());
+            // pacs.008: Ustrd — Max140Text. Truncate чтобы не падать на XSD-валидации.
+            text(doc, rmtInf, "Ustrd", truncate(d.getCcPurpose(), NAME_MAX));
         }
         if (hasDoc || hasTax) {
             Element strd = elem(doc, rmtInf, "Strd");
@@ -302,7 +303,8 @@ public class Pacs008Builder {
         if (value == null || value.isBlank()) return;
         Element p = elemNs(doc, parent, NS_UPDEXT, "Param");
         textNs(doc, p, NS_UPDEXT, "Name", name);
-        textNs(doc, p, NS_UPDEXT, "Value", value);
+        // Защита от превышения 140 символов по контракту pacs.008/updext.
+        textNs(doc, p, NS_UPDEXT, "Value", truncate(value, NAME_MAX));
     }
 
     /** Element с явным namespace — для UPDExtension subtree (вне pacs.008 NS). */
@@ -331,6 +333,12 @@ public class Pacs008Builder {
         Element e = doc.createElementNS(NS, name);
         e.setTextContent(value);
         parent.appendChild(e);
+    }
+
+    /** Обрезка строки до указанной длины (без эллипсиса, чисто срезом). */
+    private static String truncate(String value, int max) {
+        if (value == null || value.length() <= max) return value;
+        return value.substring(0, max);
     }
 
     private String nz(String value, String fallback) {
