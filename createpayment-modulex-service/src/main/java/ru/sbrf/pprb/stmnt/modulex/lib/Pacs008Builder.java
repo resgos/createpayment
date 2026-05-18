@@ -286,10 +286,10 @@ public class Pacs008Builder {
         appendParam(doc, dynExt, "sendServiceId", d.getCcTransactionId());
     }
 
-    private void appendParam(Document doc, Element parent, String key, String value) {
+    private void appendParam(Document doc, Element parent, String name, String value) {
         if (value == null || value.isBlank()) return;
         Element p = elem(doc, parent, "Param");
-        text(doc, p, "Key", key);
+        text(doc, p, "Name", name);
         text(doc, p, "Value", value);
     }
 

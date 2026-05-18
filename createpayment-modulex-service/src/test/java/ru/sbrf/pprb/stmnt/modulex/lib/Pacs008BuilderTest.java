@@ -91,9 +91,9 @@ class Pacs008BuilderTest {
         assertThat(xml).contains("<SplmtryData>");
         assertThat(xml).contains("<Envlp>");
         assertThat(xml).contains("<DynExt>");
-        assertThat(xml).contains("<Key>sourceIdModuleList</Key><Value>stmnt-giganetwork</Value>");
-        assertThat(xml).contains("<Key>channel</Key><Value>PPRB_PAYMENT</Value>");
-        assertThat(xml).contains("<Key>sendServiceId</Key><Value>00000000-0000-0000-0000-000000000001</Value>");
+        assertThat(xml).contains("<Name>sourceIdModuleList</Name><Value>stmnt-giganetwork</Value>");
+        assertThat(xml).contains("<Name>channel</Name><Value>PPRB_PAYMENT</Value>");
+        assertThat(xml).contains("<Name>sendServiceId</Name><Value>00000000-0000-0000-0000-000000000001</Value>");
     }
 
     @Test
@@ -237,9 +237,9 @@ class Pacs008BuilderTest {
         assertThat(xml).doesNotContain("<BrnchId>");
         // SplmtryData с тремя Param — обязательно по контракту PGW, даже на минимальном draft.
         assertThat(xml).contains("<SplmtryData>");
-        assertThat(xml).contains("<Key>sourceIdModuleList</Key>");
-        assertThat(xml).contains("<Key>channel</Key>");
-        assertThat(xml).contains("<Key>sendServiceId</Key>");
+        assertThat(xml).contains("<Name>sourceIdModuleList</Name>");
+        assertThat(xml).contains("<Name>channel</Name>");
+        assertThat(xml).contains("<Name>sendServiceId</Name>");
     }
 
     private TurnDocdataDraft sampleDraft() {
