@@ -37,6 +37,9 @@ public class Pacs008Builder {
     private static final String XMLNS_NS = "http://www.w3.org/2000/xmlns/";
     private static final int NAME_MAX = 140;
     private static final int CONTACT_TAIL = 20;
+    /** Максимум {@code <Ustrd>} элементов внутри RmtInf. Контракт PGW допускает
+     *  повторение Ustrd; ставим разумный потолок чтобы не было runaway. */
+    private static final int USTRD_MAX_PARTS = 4;
     private static final Pattern ISO_DATE_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
     private static final Pattern PERIOD_TYPE_PATTERN = Pattern.compile("MM\\d{2}|QTR[1-4]|HLF[12]");
     private static final Pattern YEAR_PATTERN = Pattern.compile("\\d{4}");
@@ -168,8 +171,18 @@ public class Pacs008Builder {
 
         Element rmtInf = elem(doc, parent, "RmtInf");
         if (hasPurpose) {
-            // pacs.008: Ustrd — Max140Text. Truncate чтобы не падать на XSD-валидации.
-            text(doc, rmtInf, "Ustrd", truncate(d.getCcPurpose(), NAME_MAX));
+            // pacs.008: <Ustrd> — Max140Text, кардинальность [0..*]. Длинный purpose
+            // разбиваем на куски по 140 символов и кладём как несколько <Ustrd>
+            // подряд в одном <RmtInf>. Защита USTRD_MAX_PARTS от runaway.
+            String purpose = d.getCcPurpose();
+            int written = 0;
+            int parts = 0;
+            while (written < purpose.length() && parts < USTRD_MAX_PARTS) {
+                int end = Math.min(written + NAME_MAX, purpose.length());
+                text(doc, rmtInf, "Ustrd", purpose.substring(written, end));
+                written = end;
+                parts++;
+            }
         }
         if (hasDoc || hasTax) {
             Element strd = elem(doc, rmtInf, "Strd");

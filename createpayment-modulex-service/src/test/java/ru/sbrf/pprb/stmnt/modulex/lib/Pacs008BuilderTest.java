@@ -98,16 +98,34 @@ class Pacs008BuilderTest {
     }
 
     @Test
-    void ustrdLongerThan140IsTruncated() {
+    void ustrdLongerThan140IsSplitIntoMultipleParts() {
         TurnDocdataDraft d = sampleDraft();
-        String longPurpose = "П".repeat(200);
+        // 200 символов → 2 Ustrd: 140 + 60.
+        String longPurpose = "П".repeat(140) + "К".repeat(60);
         d.setCcPurpose(longPurpose);
 
         String xml = builder.build(d);
 
-        // Ustrd обрезан до 140 символов (Max140Text по pacs.008).
+        // Первая часть — ровно 140 "П"
         assertThat(xml).contains("<Ustrd>" + "П".repeat(140) + "</Ustrd>");
-        assertThat(xml).doesNotContain("П".repeat(141));
+        // Вторая часть — 60 "К"
+        assertThat(xml).contains("<Ustrd>" + "К".repeat(60) + "</Ustrd>");
+        // Между ними нет тегов кроме <Ustrd></Ustrd>
+        assertThat(xml).contains(
+                "<Ustrd>" + "П".repeat(140) + "</Ustrd><Ustrd>" + "К".repeat(60) + "</Ustrd>");
+    }
+
+    @Test
+    void ustrdSplitCapsAtUstrdMaxParts() {
+        TurnDocdataDraft d = sampleDraft();
+        // 800 символов → должно быть 4 Ustrd по 140 = 560, остаток 240 теряется (USTRD_MAX_PARTS=4).
+        d.setCcPurpose("П".repeat(800));
+
+        String xml = builder.build(d);
+
+        // Считаем сколько <Ustrd> в выводе.
+        int count = xml.split("<Ustrd>", -1).length - 1;
+        assertThat(count).isEqualTo(4);
     }
 
     @Test
