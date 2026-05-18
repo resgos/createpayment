@@ -31,6 +31,10 @@ import java.util.regex.Pattern;
 public class Pacs008Builder {
 
     private static final String NS = "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08";
+    /** Namespace для UPDExtension/DynExt/Param — отдельный от pacs.008. */
+    private static final String NS_UPDEXT = "urn:iso:std:iso:20022:tech:xsd:updext";
+    /** XML-namespace для xmlns-атрибута (для setAttributeNS). */
+    private static final String XMLNS_NS = "http://www.w3.org/2000/xmlns/";
     private static final int NAME_MAX = 140;
     private static final int CONTACT_TAIL = 20;
     private static final Pattern ISO_DATE_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
@@ -267,18 +271,26 @@ public class Pacs008Builder {
     }
 
     /**
-     * Блок {@code SplmtryData/Envlp/DynExt/Param} — обязательный для PGW
+     * Блок {@code SplmtryData/Envlp/UPDExtension/DynExt/Param} — обязательный для PGW
      * по контракту. Содержит 3 параметра:
      * <ul>
      *   <li>{@code sourceIdModuleList} — код модуля-источника (= {@code ccSystemId}).</li>
      *   <li>{@code channel} — канал поступления платежа (default {@code PPRB_PAYMENT}).</li>
      *   <li>{@code sendServiceId} — сервис-id инициатора (= {@code ccTransactionId}, UUID 36).</li>
      * </ul>
+     *
+     * <p><b>Namespace</b>: {@code SplmtryData} и {@code Envlp} остаются в pacs.008,
+     * но {@code UPDExtension} и всё внутри ({@code DynExt}, {@code Param}, {@code Name},
+     * {@code Value}) — в отдельном namespace {@code urn:iso:std:iso:20022:tech:xsd:updext}.</p>
      */
     private void appendSplmtryData(Document doc, Element parent, TurnDocdataDraft d) {
         Element splmtry = elem(doc, parent, "SplmtryData");
         Element envlp = elem(doc, splmtry, "Envlp");
-        Element dynExt = elem(doc, envlp, "DynExt");
+        // UPDExtension и потомки — в namespace updext (не pacs.008).
+        Element updExt = elemNs(doc, envlp, NS_UPDEXT, "UPDExtension");
+        // Явный xmlns на UPDExtension — гарантия, что Transformer выведет declaration.
+        updExt.setAttributeNS(XMLNS_NS, "xmlns", NS_UPDEXT);
+        Element dynExt = elemNs(doc, updExt, NS_UPDEXT, "DynExt");
         appendParam(doc, dynExt, "sourceIdModuleList",
                 nz(d.getCcSystemId(), TurnDocdataDefaults.SYSTEM_ID));
         appendParam(doc, dynExt, "channel",
@@ -288,9 +300,24 @@ public class Pacs008Builder {
 
     private void appendParam(Document doc, Element parent, String name, String value) {
         if (value == null || value.isBlank()) return;
-        Element p = elem(doc, parent, "Param");
-        text(doc, p, "Name", name);
-        text(doc, p, "Value", value);
+        Element p = elemNs(doc, parent, NS_UPDEXT, "Param");
+        textNs(doc, p, NS_UPDEXT, "Name", name);
+        textNs(doc, p, NS_UPDEXT, "Value", value);
+    }
+
+    /** Element с явным namespace — для UPDExtension subtree (вне pacs.008 NS). */
+    private Element elemNs(Document doc, Element parent, String ns, String name) {
+        Element e = doc.createElementNS(ns, name);
+        parent.appendChild(e);
+        return e;
+    }
+
+    /** Text-element с явным namespace — для содержимого UPDExtension. */
+    private void textNs(Document doc, Element parent, String ns, String name, String value) {
+        if (value == null) return;
+        Element e = doc.createElementNS(ns, name);
+        e.setTextContent(value);
+        parent.appendChild(e);
     }
 
     private Element elem(Document doc, Element parent, String name) {

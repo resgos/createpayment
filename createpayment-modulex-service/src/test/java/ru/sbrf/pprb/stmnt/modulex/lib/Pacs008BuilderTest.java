@@ -90,6 +90,7 @@ class Pacs008BuilderTest {
 
         assertThat(xml).contains("<SplmtryData>");
         assertThat(xml).contains("<Envlp>");
+        assertThat(xml).contains("<UPDExtension xmlns=\"urn:iso:std:iso:20022:tech:xsd:updext\">");
         assertThat(xml).contains("<DynExt>");
         assertThat(xml).contains("<Name>sourceIdModuleList</Name><Value>stmnt-giganetwork</Value>");
         assertThat(xml).contains("<Name>channel</Name><Value>PPRB_PAYMENT</Value>");
@@ -236,7 +237,9 @@ class Pacs008BuilderTest {
         assertThat(xml).doesNotContain("<TaxRmt>");
         assertThat(xml).doesNotContain("<BrnchId>");
         // SplmtryData с тремя Param — обязательно по контракту PGW, даже на минимальном draft.
+        // UPDExtension в namespace urn:iso:std:iso:20022:tech:xsd:updext.
         assertThat(xml).contains("<SplmtryData>");
+        assertThat(xml).contains("<UPDExtension xmlns=\"urn:iso:std:iso:20022:tech:xsd:updext\">");
         assertThat(xml).contains("<Name>sourceIdModuleList</Name>");
         assertThat(xml).contains("<Name>channel</Name>");
         assertThat(xml).contains("<Name>sendServiceId</Name>");
