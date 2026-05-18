@@ -52,7 +52,7 @@ public class Pacs008Builder {
             Element fitofi = elem(doc, document, "FIToFICstmrCdtTrf");
             appendGrpHdr(doc, fitofi, d);
             appendCdtTrfTxInf(doc, fitofi, d);
-            // SplmtryData по текущему эталону не выпускается.
+            appendSplmtryData(doc, fitofi, d);
 
             return serialize(doc);
         } catch (ParserConfigurationException | TransformerException e) {
@@ -264,6 +264,33 @@ public class Pacs008Builder {
         } else {
             text(doc, prd, "Yr", taxPeriod);
         }
+    }
+
+    /**
+     * Блок {@code SplmtryData/Envlp/DynExt/Param} — обязательный для PGW
+     * по контракту. Содержит 3 параметра:
+     * <ul>
+     *   <li>{@code sourceIdModuleList} — код модуля-источника (= {@code ccSystemId}).</li>
+     *   <li>{@code channel} — канал поступления платежа (default {@code PPRB_PAYMENT}).</li>
+     *   <li>{@code sendServiceId} — сервис-id инициатора (= {@code ccTransactionId}, UUID 36).</li>
+     * </ul>
+     */
+    private void appendSplmtryData(Document doc, Element parent, TurnDocdataDraft d) {
+        Element splmtry = elem(doc, parent, "SplmtryData");
+        Element envlp = elem(doc, splmtry, "Envlp");
+        Element dynExt = elem(doc, envlp, "DynExt");
+        appendParam(doc, dynExt, "sourceIdModuleList",
+                nz(d.getCcSystemId(), TurnDocdataDefaults.SYSTEM_ID));
+        appendParam(doc, dynExt, "channel",
+                nz(d.getCcDocTypeCode(), TurnDocdataDefaults.CHANNEL_DEFAULT));
+        appendParam(doc, dynExt, "sendServiceId", d.getCcTransactionId());
+    }
+
+    private void appendParam(Document doc, Element parent, String key, String value) {
+        if (value == null || value.isBlank()) return;
+        Element p = elem(doc, parent, "Param");
+        text(doc, p, "Key", key);
+        text(doc, p, "Value", value);
     }
 
     private Element elem(Document doc, Element parent, String name) {

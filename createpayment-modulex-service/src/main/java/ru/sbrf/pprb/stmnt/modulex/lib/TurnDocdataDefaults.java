@@ -15,6 +15,11 @@ public final class TurnDocdataDefaults {
     public static final String CURRENCY_RUB = "810";
     public static final BigDecimal PRIORITY_DEFAULT = new BigDecimal("5");
     public static final String SYSTEM_ID = "stmnt-giganetwork";
+    /**
+     * Канал поступления платежа для SplmtryData/Envlp/DynExt/Param[channel].
+     * По умолчанию {@code PPRB_PAYMENT}, если у walletTurn не задан свой канал.
+     */
+    public static final String CHANNEL_DEFAULT = "PPRB_PAYMENT";
 
     private TurnDocdataDefaults() {
     }

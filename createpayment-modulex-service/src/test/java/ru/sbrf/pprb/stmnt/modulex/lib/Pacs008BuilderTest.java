@@ -80,14 +80,20 @@ class Pacs008BuilderTest {
     }
 
     @Test
-    void supplementaryDataNotEmitted() {
-        // По актуальному эталону SplmtryData не выпускается.
+    void supplementaryDataEmittedWithThreeParams() {
+        // По контракту PGW: SplmtryData/Envlp/DynExt/Param × 3 — обязательно.
         TurnDocdataDraft d = sampleDraft();
+        d.setCcSystemId("stmnt-giganetwork");
+        d.setCcTransactionId("00000000-0000-0000-0000-000000000001");
 
         String xml = builder.build(d);
 
-        assertThat(xml).doesNotContain("<SplmtryData>");
-        assertThat(xml).doesNotContain("<Name>sourceIdModuleList</Name>");
+        assertThat(xml).contains("<SplmtryData>");
+        assertThat(xml).contains("<Envlp>");
+        assertThat(xml).contains("<DynExt>");
+        assertThat(xml).contains("<Key>sourceIdModuleList</Key><Value>stmnt-giganetwork</Value>");
+        assertThat(xml).contains("<Key>channel</Key><Value>PPRB_PAYMENT</Value>");
+        assertThat(xml).contains("<Key>sendServiceId</Key><Value>00000000-0000-0000-0000-000000000001</Value>");
     }
 
     @Test
@@ -228,8 +234,12 @@ class Pacs008BuilderTest {
         // секция RmtInf вообще не выпускается.
         assertThat(xml).doesNotContain("<RmtInf>");
         assertThat(xml).doesNotContain("<TaxRmt>");
-        assertThat(xml).doesNotContain("<SplmtryData>");
         assertThat(xml).doesNotContain("<BrnchId>");
+        // SplmtryData с тремя Param — обязательно по контракту PGW, даже на минимальном draft.
+        assertThat(xml).contains("<SplmtryData>");
+        assertThat(xml).contains("<Key>sourceIdModuleList</Key>");
+        assertThat(xml).contains("<Key>channel</Key>");
+        assertThat(xml).contains("<Key>sendServiceId</Key>");
     }
 
     private TurnDocdataDraft sampleDraft() {
