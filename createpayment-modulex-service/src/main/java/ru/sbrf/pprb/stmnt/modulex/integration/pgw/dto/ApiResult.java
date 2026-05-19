@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
  * Поля заполняются по тому, что вернёт сервер — некоторые могут быть null.
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)

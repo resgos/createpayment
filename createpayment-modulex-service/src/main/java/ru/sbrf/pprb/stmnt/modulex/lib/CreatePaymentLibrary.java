@@ -137,16 +137,40 @@ public class CreatePaymentLibrary {
 
             String xml = pacs008Builder.build(draft);
             draft.setPacs008Xml(xml);
-            sendToPgw(draft, xml);
 
-            // 2. turn_docdata — двойная запись (DT + KT). Пишем в синке, пока
-            //    у нас полные данные обогащения (включая ccKTRegisterId).
-            //    Async-callback от PGW дополнит ccPayStatus финальным значением.
+            // 2. turn_docdata — двойная запись (DT + KT). Сохраняем ДО PGW,
+            //    как только данные обогащения готовы. Документ существует
+            //    независимо от итога доставки PGW (статус трекается отдельно
+            //    в status_WalletTurn).
             saveTurnDocdataPair(draft, wt, txId);
 
-            // 3. PPRB_STARTED — PGW принял pacs.008. Ждём async-квитанцию.
-            persistStatus(bchOpId, operationId, txId,
-                    ExecutionStatus.PPRB_STARTED.name(), null, null);
+            // 3. Отправка в PGW. Метод теперь НЕ бросает — возвращает ApiResult
+            //    со status = SUCCESS / QUEUED / ERROR / SKIPPED.
+            ApiResult pgwResult = sendToPgw(draft, xml);
+            String pgwStatus = pgwResult.getStatus();
+
+            // 4. Статус по итогу PGW-вызова.
+            if ("QUEUED".equals(pgwStatus)) {
+                // PGW не дошёл sync — УРД в outbox, ждём worker. НЕ FAILED.
+                persistStatus(bchOpId, operationId, txId,
+                        ExecutionStatus.PPRB_QUEUED.name(), pgwStatus, pgwResult.getMessage());
+            } else if ("ERROR".equals(pgwStatus)) {
+                // Outbox сам упал — терминальная ошибка доставки.
+                persistStatus(bchOpId, operationId, txId,
+                        ExecutionStatus.PPRB_FAILED.name(), pgwStatus, pgwResult.getMessage());
+                return ExecutionResult.builder()
+                        .transactionId(txId)
+                        .operationId(operationId)
+                        .bchOperationId(bchOpId)
+                        .contractId(contractId)
+                        .resultStatus(ExecutionStatus.PPRB_FAILED)
+                        .statusDescription(pgwResult.getMessage())
+                        .build();
+            } else {
+                // SUCCESS или SKIPPED (PGW disabled) — считаем что доставлено.
+                persistStatus(bchOpId, operationId, txId,
+                        ExecutionStatus.PPRB_STARTED.name(), null, null);
+            }
 
             return ExecutionResult.builder()
                     .transactionId(txId)
@@ -439,7 +463,7 @@ public class CreatePaymentLibrary {
         d.setCcContrRegisterId(d.getCcKTRegisterId());
     }
 
-    private void sendToPgw(TurnDocdataDraft draft, String pacs008Xml) {
+    private ApiResult sendToPgw(TurnDocdataDraft draft, String pacs008Xml) {
         UPDDTO updDTO = buildUpdDto(draft, pacs008Xml);
         ApiResult result = pgwClient.transferUpd(draft.getCcRqUId(), updDTO);
         draft.setPgwCorrelationId(result.getCorrelationId());
@@ -448,6 +472,7 @@ public class CreatePaymentLibrary {
         }
         log.debug("PGW response for ccOperationId={}: correlationId={}, status={}",
                 draft.getCcOperationId(), result.getCorrelationId(), result.getStatus());
+        return result;
     }
 
     private UPDDTO buildUpdDto(TurnDocdataDraft d, String pacs008Xml) {

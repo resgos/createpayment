@@ -98,6 +98,10 @@ public class PgwClientImpl implements PgwClient {
             }
             success.increment();
             duration.record(System.nanoTime() - started, java.util.concurrent.TimeUnit.NANOSECONDS);
+            // Нормализуем status — PGW иногда возвращает null. Считаем доставленным.
+            if (body.getStatus() == null || body.getStatus().isBlank()) {
+                body = body.toBuilder().status("SUCCESS").build();
+            }
             log.debug("PGW transferUpd ok: correlationId={}, idempotencyKey={}, status={}",
                     body.getCorrelationId(), body.getIdempotencyKey(), body.getStatus());
             return body;
@@ -106,18 +110,35 @@ public class PgwClientImpl implements PgwClient {
             duration.record(System.nanoTime() - started, java.util.concurrent.TimeUnit.NANOSECONDS);
             log.warn("PGW transferUpd sync FAILED requestId={}: {} — scheduling outbox retry",
                     requestId, e.getMessage());
-            scheduleOutboxRetry(requestId, updDTO, e.getMessage());
-            throw new IllegalStateException(
-                    "PGW transferUpd failed sync, queued for background retry: " + e.getMessage(), e);
+            boolean enqueued = scheduleOutboxRetry(requestId, updDTO, e.getMessage());
+            if (enqueued) {
+                // УРД в очереди — это НЕ терминальная ошибка, гарант-доставка работает.
+                return ApiResult.builder()
+                        .correlationId(requestId)
+                        .status("QUEUED")
+                        .message("Queued for background retry: " + e.getMessage())
+                        .build();
+            }
+            // Outbox тоже не дал положить — терминальная ошибка.
+            return ApiResult.builder()
+                    .correlationId(requestId)
+                    .status("ERROR")
+                    .message("Sync failed and outbox enqueue failed: " + e.getMessage())
+                    .build();
         }
     }
 
-    private void scheduleOutboxRetry(String requestId, UPDDTO updDTO, String errorMsg) {
+    /**
+     * Кладём УРД в outbox. Возвращает {@code true} если запись успешно создана
+     * (или уже была — дубль), {@code false} если outbox сам упал (тогда это
+     * терминальная ошибка для УРД, retry не будет).
+     */
+    private boolean scheduleOutboxRetry(String requestId, UPDDTO updDTO, String errorMsg) {
         try {
-            // Если запись уже есть (дубль/повторная отправка тем же клиентом) — не дублируем.
+            // Если запись уже есть (дубль/повторная отправка тем же клиентом) — считаем enqueued.
             if (outbox.findByRequestId(requestId).isPresent()) {
                 log.debug("Outbox entry already exists for requestId={} — skip enqueue", requestId);
-                return;
+                return true;
             }
             String payload = objectMapper.writeValueAsString(updDTO);
             LocalDateTime now = LocalDateTime.now(AppConfig.ZONE_ID);
@@ -137,12 +158,15 @@ public class PgwClientImpl implements PgwClient {
             outboxed.increment();
             log.info("Enqueued UPD in outbox: requestId={}, updUID={}, nextRetryAt={}",
                     requestId, updDTO.getUpdUID(), entry.getCcNextRetryAt());
+            return true;
         } catch (JsonProcessingException ex) {
             log.error("Failed to serialize UPDDTO for outbox: requestId={}, error={}",
                     requestId, ex.getMessage(), ex);
+            return false;
         } catch (Exception ex) {
             log.error("Failed to enqueue outbox entry for requestId={}: {}",
                     requestId, ex.getMessage(), ex);
+            return false;
         }
     }
 

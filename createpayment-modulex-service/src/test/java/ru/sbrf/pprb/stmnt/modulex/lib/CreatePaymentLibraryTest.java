@@ -143,19 +143,48 @@ class CreatePaymentLibraryTest {
     }
 
     @Test
-    void pgwFailureMarksItemFailedAndPersistsFailedStatus() {
+    void pgwQueuedKeepsClientAtProcessingAndWritesQueuedStatus() {
+        // PGW sync-доставка упала → PgwClient возвращает status="QUEUED"
+        // (УРД в outbox для retry). Не считаем это FAILED.
         walletTurnRepository.put(sampleWalletTurn());
         mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
         mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
         when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
-                .thenThrow(new IllegalStateException("PGW unreachable"));
+                .thenAnswer(inv -> ApiResult.builder()
+                        .correlationId(inv.getArgument(0))
+                        .status("QUEUED")
+                        .message("Queued for background retry: connection refused")
+                        .build());
+
+        ExecutionResult result = library.execute(baseRequest(BCH_OP_1, CONTRACT_1))
+                .getExecutionResults().get(0);
+
+        // Клиенту — всё ещё PROCESSING (гарант-доставка работает).
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
+        // status_WalletTurn: PPRB_GET и PPRB_QUEUED записаны, FAILED НЕТ.
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_GET")).isNotNull();
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_QUEUED")).isNotNull();
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_STARTED")).isNull();
+        assertThat(statusRepository.find(BCH_OP_1, "PPRB_FAILED")).isNull();
+    }
+
+    @Test
+    void pgwErrorStatusPersistsFailedStatus() {
+        // Outbox сам упал → PgwClient возвращает status="ERROR" — терминал.
+        walletTurnRepository.put(sampleWalletTurn());
+        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
+        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
+        when(pgwClient.transferUpd(anyString(), any(UPDDTO.class)))
+                .thenAnswer(inv -> ApiResult.builder()
+                        .correlationId(inv.getArgument(0))
+                        .status("ERROR")
+                        .message("Outbox enqueue failed")
+                        .build());
 
         ExecutionResult result = library.execute(baseRequest(BCH_OP_1, CONTRACT_1))
                 .getExecutionResults().get(0);
 
         assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_FAILED);
-        assertThat(result.getStatusDescription()).contains("PGW unreachable");
-        // PPRB_GET записался (после валидации), PPRB_STARTED НЕ записался (PGW бросил), PPRB_FAILED есть.
         assertThat(statusRepository.find(BCH_OP_1, "PPRB_GET")).isNotNull();
         assertThat(statusRepository.find(BCH_OP_1, "PPRB_STARTED")).isNull();
         assertThat(statusRepository.find(BCH_OP_1, "PPRB_FAILED")).isNotNull();

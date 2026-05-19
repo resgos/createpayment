@@ -21,6 +21,7 @@ import ru.sbrf.pprb.stmnt.modulex.integration.pgw.dto.ResultStatus;
 public final class CcStatusMapper {
 
     public static final String GET = "PPRB_GET";
+    public static final String QUEUED = "PPRB_QUEUED";
     public static final String STARTED = "PPRB_STARTED";
     public static final String EXECUTED = "PPRB_EXECUTED";
     public static final String PROCESSING = "PPRB_PROCESSING";
