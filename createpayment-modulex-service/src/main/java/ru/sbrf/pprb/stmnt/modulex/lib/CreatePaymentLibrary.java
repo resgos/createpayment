@@ -121,24 +121,22 @@ public class CreatePaymentLibrary {
             simpleValidator.requireNonNull(ref, "walletTurn");
             simpleValidator.requireNonBlank(bchOpId, "ccBchOperationId");
 
-            // 0. Идемпотентность по walletTurn: если уже есть финальный статус
-            //    и forceResend=false — возвращаем закешированный результат без
-            //    новой отправки в PGW.
+            // 0. Идемпотентность по walletTurn: только PPRB_EXECUTED блокирует
+            //    повтор без forceResend (защита от двойного зачисления).
+            //    PPRB_FAILED НЕ блокирует — клиент может свободно ретраить
+            //    упавшие платежи (риска дубля нет, ничего не прошло).
             if (!forceResend) {
                 Optional<String> finalStatus = statusWalletTurnRepository.findLastFinalStatus(bchOpId);
-                if (finalStatus.isPresent()) {
-                    log.info("ccBchOperationId={} already has final status {} — skip resend (forceResend=false)",
-                            bchOpId, finalStatus.get());
-                    ExecutionStatus mapped = "PPRB_EXECUTED".equals(finalStatus.get())
-                            ? ExecutionStatus.PPRB_EXECUTED
-                            : ExecutionStatus.PPRB_FAILED;
+                if (finalStatus.isPresent() && "PPRB_EXECUTED".equals(finalStatus.get())) {
+                    log.info("ccBchOperationId={} already EXECUTED — skip resend (forceResend=false)",
+                            bchOpId);
                     return ExecutionResult.builder()
                             .transactionId(txId)
                             .operationId(operationId)
                             .bchOperationId(bchOpId)
                             .contractId(contractId)
-                            .resultStatus(mapped)
-                            .statusDescription("Already processed; pass forceResend=true to send again")
+                            .resultStatus(ExecutionStatus.PPRB_EXECUTED)
+                            .statusDescription("Already executed; pass forceResend=true to send again")
                             .build();
                 }
             }
