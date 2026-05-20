@@ -50,9 +50,13 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
             return;
         }
         try {
-            if (existsStatus(u.getCcWalletTurnObjectId(), u.getCcStatus())) {
-                log.debug("status_WalletTurn already exists: walletTurnObjectId={}, status={} — idempotent skip",
-                        u.getCcWalletTurnObjectId(), u.getCcStatus());
+            // Dedup per attempt (ccOperationId + ccStatus). Каждый updUID получает
+            // свою независимую серию строк — это позволяет forceResend создавать
+            // новые попытки без конфликтов со старыми.
+            if (u.getCcOperationId() != null
+                    && existsStatusForOperation(u.getCcOperationId(), u.getCcStatus())) {
+                log.debug("status_WalletTurn already exists: ccOperationId={}, status={} — idempotent skip",
+                        u.getCcOperationId(), u.getCcStatus());
                 return;
             }
             Packet packet = new Packet();
@@ -108,12 +112,49 @@ public class DataSpaceStatusWalletTurnRepository implements StatusWalletTurnRepo
         }
     }
 
+    @Override
+    public Optional<String> findLastFinalStatus(String ccWalletTurnObjectId) {
+        if (ccWalletTurnObjectId == null || ccWalletTurnObjectId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            // EXECUTED имеет приоритет: если есть и EXECUTED и FAILED для этого
+            // walletTurn — считаем что в итоге исполнено.
+            if (existsByWalletTurnAndStatus(ccWalletTurnObjectId, "PPRB_EXECUTED")) {
+                return Optional.of("PPRB_EXECUTED");
+            }
+            if (existsByWalletTurnAndStatus(ccWalletTurnObjectId, "PPRB_FAILED")) {
+                return Optional.of("PPRB_FAILED");
+            }
+            return Optional.empty();
+        } catch (SdkJsonRpcClientException e) {
+            log.error("status_WalletTurn final-status lookup for ccWalletTurnObjectId={} FAILED: {}",
+                    ccWalletTurnObjectId, e.getMessage(), e);
+            // На ошибке lookup — лучше не блокировать обработку. Возвращаем empty,
+            // даём пайплайну продолжить (новая попытка).
+            return Optional.empty();
+        }
+    }
+
     /**
-     * Проверка существования строки по натуральному ключу
-     * {@code (ccWalletTurnObjectId, ccStatus)} — для app-level дедупа.
-     * В корп-схеме уник-констрейнта на этой паре нет.
+     * Проверка существования строки по {@code (ccOperationId, ccStatus)} — для
+     * app-level дедупа внутри одной попытки. Каждый updUID = независимая серия.
      */
-    private boolean existsStatus(String walletTurnObjectId, String status) throws SdkJsonRpcClientException {
+    private boolean existsStatusForOperation(String ccOperationId, String status)
+            throws SdkJsonRpcClientException {
+        GraphCollection<StatusWalletTurnGet> coll = dsApi.searchStatusWalletTurn(g -> g
+                .setWhere(w -> w.ccOperationIdEq(ccOperationId).and(w.ccStatusEq(status)))
+                .setLimit(1)
+                .withCcStatus());
+        return coll.stream().findFirst().isPresent();
+    }
+
+    /**
+     * Проверка существования строки по {@code (ccWalletTurnObjectId, ccStatus)} —
+     * для pre-check «уже отработан этот платёж?».
+     */
+    private boolean existsByWalletTurnAndStatus(String walletTurnObjectId, String status)
+            throws SdkJsonRpcClientException {
         GraphCollection<StatusWalletTurnGet> coll = dsApi.searchStatusWalletTurn(g -> g
                 .setWhere(w -> w.ccWalletTurnObjectIdEq(walletTurnObjectId).and(w.ccStatusEq(status)))
                 .setLimit(1)

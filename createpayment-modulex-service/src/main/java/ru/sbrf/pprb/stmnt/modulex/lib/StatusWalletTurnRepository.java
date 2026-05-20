@@ -17,4 +17,13 @@ public interface StatusWalletTurnRepository {
     void upsertStatus(StatusWalletTurnUpdate update);
 
     Optional<StatusWalletTurnView> findFirstByOperationId(String ccOperationId);
+
+    /**
+     * Поиск последнего терминального статуса по blockchain-операции.
+     * Возвращает {@code PPRB_EXECUTED} (приоритет) или {@code PPRB_FAILED},
+     * если для walletTurn уже есть финальная строка. Используется для
+     * идемпотентности при повторных вызовах createPayment без
+     * {@code forceResend=true}.
+     */
+    Optional<String> findLastFinalStatus(String ccWalletTurnObjectId);
 }

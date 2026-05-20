@@ -1,6 +1,7 @@
 package ru.sbrf.pprb.stmnt.modulex.lib;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionResult;
 import ru.sbrf.pprb.stmnt.modulex.api.dto.ExecutionStatus;
@@ -55,6 +56,24 @@ public class ExecuteResponseHandler {
         this.operationDtoParser = operationDtoParser;
         this.resultCallback = resultCallback;
         this.idempotencyCache = idempotencyCache;
+    }
+
+    /**
+     * Async wrapper для {@link #handle}. Controller вызывает этот метод и
+     * сразу возвращает {@code 200 OK} PGW — обработка происходит в фоне на
+     * пуле {@code pgwCallbackExecutor}.
+     *
+     * <p>По контракту PGW: ответ должен прийти быстро (timeout ~300 мс), а
+     * персистенция и бизнес-логика — на наше усмотрение.</p>
+     */
+    @Async("pgwCallbackExecutor")
+    public void handleAsync(String correlationId, String idempotencyKey, ResponseTicketRequest ticket) {
+        try {
+            handle(correlationId, idempotencyKey, ticket);
+        } catch (Exception e) {
+            log.error("Async PGW callback processing failed: correlationId={}, idempotencyKey={}, error={}",
+                    correlationId, idempotencyKey, e.getMessage(), e);
+        }
     }
 
     public ApiResult handle(String correlationId, String idempotencyKey, ResponseTicketRequest ticket) {

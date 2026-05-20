@@ -110,6 +110,7 @@ public class CreatePaymentLibrary {
                                        Map<String, Participant> bicDirectory) {
         String bchOpId = ref != null ? ref.getCcBchOperationId() : null;
         String contractId = ref != null ? ref.getCcContractId() : null;
+        boolean forceResend = ref != null && ref.isForceResend();
 
         // ID-ы генерим до try — чтобы catch-fallback мог записать PPRB_FAILED
         // со всеми тремя mandatory полями в DataSpace.
@@ -120,13 +121,36 @@ public class CreatePaymentLibrary {
             simpleValidator.requireNonNull(ref, "walletTurn");
             simpleValidator.requireNonBlank(bchOpId, "ccBchOperationId");
 
+            // 0. Идемпотентность по walletTurn: если уже есть финальный статус
+            //    и forceResend=false — возвращаем закешированный результат без
+            //    новой отправки в PGW.
+            if (!forceResend) {
+                Optional<String> finalStatus = statusWalletTurnRepository.findLastFinalStatus(bchOpId);
+                if (finalStatus.isPresent()) {
+                    log.info("ccBchOperationId={} already has final status {} — skip resend (forceResend=false)",
+                            bchOpId, finalStatus.get());
+                    ExecutionStatus mapped = "PPRB_EXECUTED".equals(finalStatus.get())
+                            ? ExecutionStatus.PPRB_EXECUTED
+                            : ExecutionStatus.PPRB_FAILED;
+                    return ExecutionResult.builder()
+                            .transactionId(txId)
+                            .operationId(operationId)
+                            .bchOperationId(bchOpId)
+                            .contractId(contractId)
+                            .resultStatus(mapped)
+                            .statusDescription("Already processed; pass forceResend=true to send again")
+                            .build();
+                }
+            }
+
             WalletTurn wt = walletTurnRepository.findByBchOperationId(bchOpId)
                     .orElseThrow(() -> new IllegalStateException(
                             "WalletTurn not found for ccBchOperationId=" + bchOpId));
 
             // 1. PPRB_GET — приняли запрос, ID-ы есть.
             persistStatus(bchOpId, operationId, txId,
-                    ExecutionStatus.PPRB_GET.name(), null, null);
+                    ExecutionStatus.PPRB_GET.name(), null,
+                    forceResend ? "forceResend=true" : null);
 
             TurnDocdataDraft draft = assembleDraft(wt, contractId, rqTm, txId, operationId, rqUID);
             Map<String, Sfs> sfsCache = new HashMap<>();

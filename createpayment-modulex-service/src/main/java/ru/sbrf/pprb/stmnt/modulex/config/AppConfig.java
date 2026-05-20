@@ -12,7 +12,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -42,6 +45,7 @@ import java.time.format.DateTimeFormatter;
 @Configuration
 @EnableAutoConfiguration
 @EnableScheduling
+@EnableAsync
 @ComponentScan({"ru.sbrf.pprb.stmnt"})
 @EnableConfigurationProperties({
         SberIntegrationProperties.class,
@@ -143,6 +147,25 @@ public class AppConfig {
     @Bean
     public UpdOutboxRepository updOutboxRepository() {
         return new InMemoryUpdOutboxRepository();
+    }
+
+    /**
+     * Пул для async-обработки PGW callback ({@code @Async("pgwCallbackExecutor")}).
+     * Controller возвращает {@code 200 OK} PGW мгновенно, а вся бизнес-логика
+     * квитанции (lookup, save turn_docdata, resultCallback, idempotency cache)
+     * выполняется на этом пуле в фоне.
+     */
+    @Bean("pgwCallbackExecutor")
+    public TaskExecutor pgwCallbackExecutor() {
+        ThreadPoolTaskExecutor exec = new ThreadPoolTaskExecutor();
+        exec.setCorePoolSize(2);
+        exec.setMaxPoolSize(8);
+        exec.setQueueCapacity(200);
+        exec.setThreadNamePrefix("pgw-cb-");
+        exec.setWaitForTasksToCompleteOnShutdown(true);
+        exec.setAwaitTerminationSeconds(30);
+        exec.initialize();
+        return exec;
     }
 
     @Bean

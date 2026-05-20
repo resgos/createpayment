@@ -30,6 +30,19 @@ public class InMemoryStatusWalletTurnRepository implements StatusWalletTurnRepos
     }
 
     @Override
+    public Optional<String> findLastFinalStatus(String ccWalletTurnObjectId) {
+        if (ccWalletTurnObjectId == null || ccWalletTurnObjectId.isBlank()) {
+            return Optional.empty();
+        }
+        // EXECUTED имеет приоритет: если есть и EXECUTED и FAILED — считаем исполненным.
+        StatusWalletTurnUpdate executed = store.get(keyOf(ccWalletTurnObjectId, "PPRB_EXECUTED"));
+        if (executed != null) return Optional.of("PPRB_EXECUTED");
+        StatusWalletTurnUpdate failed = store.get(keyOf(ccWalletTurnObjectId, "PPRB_FAILED"));
+        if (failed != null) return Optional.of("PPRB_FAILED");
+        return Optional.empty();
+    }
+
+    @Override
     public Optional<StatusWalletTurnView> findFirstByOperationId(String ccOperationId) {
         if (ccOperationId == null || ccOperationId.isBlank()) {
             return Optional.empty();
