@@ -216,6 +216,91 @@ class CreatePaymentLibraryTest {
     }
 
     @Test
+    void executedBlocksRepeatWithoutForceResend() {
+        // Сценарий G: повторный createPayment по walletTurn'у с уже EXECUTED.
+        // Без forceResend=true должен вернуть закешированный EXECUTED, не отправлять.
+        walletTurnRepository.put(sampleWalletTurn());
+        // Заранее имитируем PPRB_EXECUTED после прошлой попытки.
+        statusRepository.upsertStatus(StatusWalletTurnUpdate.builder()
+                .ccWalletTurnObjectId(BCH_OP_1)
+                .ccOperationId("prev-op")
+                .ccTransactionId("prev-tx")
+                .ccStatus("PPRB_EXECUTED")
+                .sysLastChangeDate(LocalDateTime.now())
+                .build());
+
+        ExecutionResult result = library.execute(baseRequest(BCH_OP_1, CONTRACT_1))
+                .getExecutionResults().get(0);
+
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_EXECUTED);
+        assertThat(result.getStatusDescription()).contains("Already executed");
+        // PGW не дёрнут — pre-check сработал.
+        org.mockito.Mockito.verifyNoInteractions(pgwClient);
+    }
+
+    @Test
+    void failedDoesNotBlockRetryWithoutForceResend() {
+        // Сценарий F: после PPRB_FAILED повтор должен пройти БЕЗ forceResend
+        // (нет риска дубль-зачисления, можно ретраить свободно).
+        walletTurnRepository.put(sampleWalletTurn());
+        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
+        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
+        statusRepository.upsertStatus(StatusWalletTurnUpdate.builder()
+                .ccWalletTurnObjectId(BCH_OP_1)
+                .ccOperationId("prev-op")
+                .ccTransactionId("prev-tx")
+                .ccStatus("PPRB_FAILED")
+                .sysLastChangeDate(LocalDateTime.now())
+                .build());
+
+        ExecutionResult result = library.execute(baseRequest(BCH_OP_1, CONTRACT_1))
+                .getExecutionResults().get(0);
+
+        // Новый цикл прошёл: получаем PPRB_PROCESSING (sync stub).
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
+        // PPRB_GET записан под НОВЫМ ccOperationId.
+        StatusWalletTurnUpdate getRow = statusRepository.find(BCH_OP_1, "PPRB_GET");
+        assertThat(getRow).isNotNull();
+        assertThat(getRow.getCcOperationId()).isEqualTo(GEN_OPERATION_ID);
+    }
+
+    @Test
+    void forceResendBypassesExecutedBlock() {
+        // Сценарий E: forceResend=true позволяет повторить даже после EXECUTED.
+        walletTurnRepository.put(sampleWalletTurn());
+        mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");
+        mockSber(REG_KT, UCP_KT, "a", "b", "c", "n", "i", "k");
+        statusRepository.upsertStatus(StatusWalletTurnUpdate.builder()
+                .ccWalletTurnObjectId(BCH_OP_1)
+                .ccOperationId("prev-op")
+                .ccTransactionId("prev-tx")
+                .ccStatus("PPRB_EXECUTED")
+                .sysLastChangeDate(LocalDateTime.now())
+                .build());
+
+        CreatePayment request = CreatePayment.builder()
+                .rqUID(UUID.randomUUID().toString())
+                .rqTm(LocalDateTime.now())
+                .version("2.0")
+                .walletTurns(List.of(WalletTurnInput.builder()
+                        .ccBchOperationId(BCH_OP_1)
+                        .ccContractId(CONTRACT_1)
+                        .forceResend(true)
+                        .build()))
+                .build();
+
+        ExecutionResult result = library.execute(request).getExecutionResults().get(0);
+
+        // Pre-check пропустил, новый цикл прошёл.
+        assertThat(result.getResultStatus()).isEqualTo(ExecutionStatus.PPRB_PROCESSING);
+        assertThat(result.getOperationId()).isEqualTo(GEN_OPERATION_ID);
+        // PPRB_GET для новой попытки записан с пометкой про forceResend.
+        StatusWalletTurnUpdate getRow = statusRepository.find(BCH_OP_1, "PPRB_GET");
+        assertThat(getRow).isNotNull();
+        assertThat(getRow.getCcStatusDesc()).isEqualTo("forceResend=true");
+    }
+
+    @Test
     void upddtoCarriesPacs008AndCorrectAttributes() {
         walletTurnRepository.put(sampleWalletTurn());
         mockSber(REG_DT, UCP_DT, "a", "b", "c", "n", "i", "k");

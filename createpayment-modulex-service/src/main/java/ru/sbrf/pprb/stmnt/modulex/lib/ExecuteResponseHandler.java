@@ -24,7 +24,8 @@ import java.util.Optional;
  *       возвращаем закешированный ApiResult без повторной обработки
  *       (требование контракта PGW: дубль ResponseTicket → статус первого).</li>
  *   <li><b>Resolve context</b> — ищем status_WalletTurn по {@code ccOperationId=updUID}
- *       (PPRB_STARTED-строка содержит привязку к ccWalletTurnObjectId/ccTransactionId).
+
+ *       (любая существующая строка — PPRB_GET / PPRB_QUEUED / PPRB_STARTED — содержит привязку к ccWalletTurnObjectId/ccTransactionId).
  *       Если строки нет — синк ещё не завершился → возвращаем ERROR, PGW повторит.</li>
  *   <li><b>Map status</b> — resultStatus + statusInfo.code → ccStatus
  *       (PPRB_PROCESSING / PPRB_EXECUTED / PPRB_FAILED).</li>

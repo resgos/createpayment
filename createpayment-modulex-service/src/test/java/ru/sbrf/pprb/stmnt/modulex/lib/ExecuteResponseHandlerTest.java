@@ -138,7 +138,10 @@ class ExecuteResponseHandlerTest {
     }
 
     @Test
-    void processingTicketDoesNotSaveDocdataAndDoesNotSendCallback() {
+    void successTicketWithAnyCodeIsTreatedAsFinalExecuted() {
+        // Упрощённая логика mapper (с commit 7468372): любой SUCCESS = EXECUTED,
+        // независимо от кода. Раньше 2xx коды трактовались как PROCESSING —
+        // теперь это поведение убрано по требованию.
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID(UPD_UID)
                 .operationDto(OPERATION_DTO_JSON)
@@ -148,9 +151,11 @@ class ExecuteResponseHandlerTest {
 
         handler.handle(CORR_ID, IDEMP_KEY, ticket);
 
-        assertThat(statusRepo.find(BCH_OP, "PPRB_PROCESSING")).isNotNull();
-        assertThat(turnDocdataRepo.findByOperationId(UPD_UID)).isEmpty();
-        assertThat(callback.sent).isEmpty();
+        // SUCCESS + любой код → PPRB_EXECUTED, callback инициатору шлётся.
+        assertThat(statusRepo.find(BCH_OP, "PPRB_EXECUTED")).isNotNull();
+        assertThat(statusRepo.find(BCH_OP, "PPRB_PROCESSING")).isNull();
+        assertThat(turnDocdataRepo.findByOperationId(UPD_UID)).isPresent();
+        assertThat(callback.sent).hasSize(1);
     }
 
     @Test

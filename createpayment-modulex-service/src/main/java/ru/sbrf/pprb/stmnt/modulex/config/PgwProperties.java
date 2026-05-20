@@ -14,13 +14,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *       при сбое: 5 × 3 мин = до 15 минут общего ретрая.</li>
  * </ul>
  *
- * <p><b>Важно</b>: текущая реализация ретрая в {@code PgwClientImpl} блокирующая
- * ({@code Thread.sleep}) — выполняется внутри синхронного HTTP-треда. При
- * сбое PGW сабж может заблокировать клиента до 15 минут. Для bullet-proof
- * варианта нужен Outbox/background-воркер (следующая итерация).</p>
+ * <p>Sync-цикл в {@code PgwClientImpl} делает ровно ОДНУ попытку — на сбое
+ * УРД кладётся в {@code upd_outbox} со status=PENDING, attempts=1, и затем
+ * {@code PgwOutboxWorker} (@Scheduled) переотправляет в фоне с тем же
+ * {@code requestId}. Клиентский Tomcat-тред не блокируется ретраями.</p>
  *
- * <p>Чтобы клиент не висел дольше его собственного таймаута, рекомендуем
- * в проде переопределить через ENV {@code PGW_MAX_ATTEMPTS=3} / {@code PGW_RETRY_DELAY_MS=10000}.</p>
+ * <p>{@code maxAttempts} и {@code retryDelayMs} применяются background-воркером.</p>
  */
 @Getter
 @Setter

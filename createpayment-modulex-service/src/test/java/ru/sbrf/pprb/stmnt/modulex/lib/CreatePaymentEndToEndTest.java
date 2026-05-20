@@ -239,7 +239,8 @@ class CreatePaymentEndToEndTest {
     }
 
     @Test
-    void pgwTicketWithProcessingCodeDoesNotTriggerCallback() {
+    void pgwTicketWithAnySuccessCodeIsTreatedAsExecuted() {
+        // С commit 7468372: SUCCESS любым кодом → PPRB_EXECUTED, callback идёт.
         CreatePayment request = CreatePayment.builder()
                 .rqUID(UUID.randomUUID().toString())
                 .rqTm(LocalDateTime.now())
@@ -249,17 +250,18 @@ class CreatePaymentEndToEndTest {
                 .build();
         ExecutionResult sync = library.execute(request).getExecutionResults().get(0);
 
-        // 250 — промежуточный код, не финальный
         ResponseTicketRequest ticket = ResponseTicketRequest.builder()
                 .updUID(sync.getOperationId())
+                .operationDto(operationDtoJson(sync.getTransactionId()))
                 .resultStatus(ResultStatus.SUCCESS)
                 .statusInfo(StatusInfo.builder().code("250").message("В обработке").build())
                 .build();
         responseHandler.handle("CORR-1", "IDEMP-1", ticket);
 
-        // Статус сохранён как PROCESSING, но callback инициатору НЕ ушёл
-        assertThat(statusRepo.find(BCH_OP, "PPRB_PROCESSING")).isNotNull();
-        assertThat(callback.sent).as("callback only on final state").isEmpty();
+        // SUCCESS → EXECUTED (любой код). Callback инициатору отправлен.
+        assertThat(statusRepo.find(BCH_OP, "PPRB_EXECUTED")).isNotNull();
+        assertThat(statusRepo.find(BCH_OP, "PPRB_PROCESSING")).isNull();
+        assertThat(callback.sent).as("callback fires on any SUCCESS").hasSize(1);
     }
 
     // ---------- captors ----------

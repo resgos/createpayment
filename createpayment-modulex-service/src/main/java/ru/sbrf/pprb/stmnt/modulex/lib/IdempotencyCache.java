@@ -33,6 +33,13 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>{@code idempotency_cache_saves} / {@code skipped_non_success}</li>
  *   <li>{@code idempotency_cache_l1_size} (gauge)</li>
  * </ul>
+ *
+ * <p><b>Известное ограничение</b>: {@link #find} и {@link #save} не атомарны.
+ * Два параллельных callback'а с одинаковым {@code idempotencyKey} могут оба
+ * миссануть в кэш и оба отправить {@code resultCallback}. PGW по контракту
+ * редко слёт одновременные дубли — на практике race почти не встречается.
+ * Bullet-proof решение — {@code ConcurrentHashMap.computeIfAbsent} вокруг
+ * всего handle-пайплайна; нужен отдельный рефакторинг.</p>
  */
 @Slf4j
 @Component
